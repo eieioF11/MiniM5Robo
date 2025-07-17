@@ -11,6 +11,19 @@ struct point_t
   T y;
 };
 
+struct laser_scan_t
+{
+  float angle_min;
+  float angle_max;
+  float angle_increment;
+  float time_increment;
+  float scan_time;
+  float range_min;
+  float range_max;
+  std::vector<float> ranges;
+  std::vector<float> intensities;
+};
+
 class LiDAR
 {
 private:
@@ -106,6 +119,25 @@ private:
       M5.Display.drawPixel((uint32_t)(p.x * 100.0) + 160, (uint32_t)(p.y * 100.0) + 120, color);
   }
 
+  void set_laser_scan(uint16_t *degrees, uint16_t *distances)
+  {
+    laser_scan_.angle_min = degrees[0] * (M_PI / 180.0);
+    laser_scan_.angle_max = degrees[15] * (M_PI / 180.0);
+    laser_scan_.angle_increment = (laser_scan_.angle_max - laser_scan_.angle_min) / 15.0;
+    laser_scan_.time_increment = 0.1; // Example value, adjust as needed
+    laser_scan_.scan_time = 0.1; // Example value, adjust as needed
+    laser_scan_.range_min = 0.02; // Minimum range in meters
+    laser_scan_.range_max = 4.0; // Maximum range in meters
+    laser_scan_.ranges.resize(16);
+    laser_scan_.intensities.resize(16);
+
+    for (int i = 0; i < 16; i++)
+    {
+      laser_scan_.ranges[i] = distances[i] * 0.001; // Convert mm to m
+      laser_scan_.intensities[i] = 100; // Example intensity value, adjust as needed
+    }
+  }
+
   void calc_point_cloud(uint16_t *degrees, uint16_t *distances)
   {
     for (int32_t i = 0; i < 16; i++)
@@ -122,6 +154,7 @@ private:
   uint32_t counter_;
   uint8_t payload_[64];
 
+  laser_scan_t laser_scan_;
   std::vector<point_t<double>> point_cloud_; // 360度分の点群
 
   bool visualize_ = false;
@@ -135,6 +168,11 @@ public:
   void begin(uint8_t rx, uint8_t tx, bool visualize = true)
   {
     LiDAR_serial_.begin(230400, SERIAL_8N1, rx, tx);
+    visualize_ = visualize;
+  }
+
+  void set_visualize(bool visualize)
+  {
     visualize_ = visualize;
   }
 
@@ -211,7 +249,9 @@ public:
             distances[13] = packet->distance_13 & 0x3FFF;
             distances[14] = packet->distance_14 & 0x3FFF;
             distances[15] = packet->distance_15 & 0x3FFF;
-            calc_point_cloud(map, distances);
+            set_laser_scan(map, distances);
+            if (visualize_)
+              calc_point_cloud(map, distances);
           }
         }
         if (visualize_)
@@ -230,7 +270,11 @@ public:
     }
     return false;
   }
-  std::vector<point_t<double>> getPointCloud()
+  laser_scan_t get_laser_scan()
+  {
+    return laser_scan_;
+  }
+  std::vector<point_t<double>> get_pointcloud()
   {
     return point_cloud_;
   }

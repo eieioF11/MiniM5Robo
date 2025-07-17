@@ -4,7 +4,7 @@
 #include <string>
 #include <vector>
 
-namespace common_lib {
+namespace common_utils {
 
   /**
    * @brief format

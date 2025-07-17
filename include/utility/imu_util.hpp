@@ -1,7 +1,7 @@
 #pragma once
 #include <Arduino.h>
 
-namespace common_lib
+namespace common_utils
 {
   struct rpy_t
   {

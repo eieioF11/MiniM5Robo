@@ -12,7 +12,7 @@
 #define M_PI 3.1415926535897932384626433832795
 #endif
 
-namespace common_lib
+namespace common_utils
 {
 
   /**
@@ -20,8 +20,18 @@ namespace common_lib
    *
    */
   inline namespace constants {
+    // rps -> rpm
+    constexpr float RPS_TO_RPM = 60.0;
+    // rpm -> rps
+    constexpr float RPM_TO_RPS = 1.0 / 60.0;
+    // rpm -> m/s
     constexpr float RPM_TO_MPS = TWO_PI/60.0;
+    // m/s -> rpm
     constexpr float MPS_TO_RPM = 60.0/TWO_PI;
+    // rps -> rad/s
+    constexpr float RPS_TO_RADPS = TWO_PI;
+    // rad/s -> rps
+    constexpr float RADPS_TO_RPS = 1.0 / TWO_PI;
     /// 円周率 / 4
     constexpr float QUARTER_PI = PI / 4.0;
 

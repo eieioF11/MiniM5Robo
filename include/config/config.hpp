@@ -1,15 +1,84 @@
 #pragma once
 #include <Arduino.h>
 #include <M5Unified.h>
+#include "utility/dynamixel_utils.hpp"
 #include <tuple>
+#include <vector>
+#include <memory>
+#include <array>
+#include <string>
+
 // math
 #include "utility/math_util.hpp"
 // filter
 #include "filter/lowpass_filter.hpp"
 #include "filter/complementary_filter.hpp"
+//AW9523
+#include <Adafruit_AW9523.h>
+#include "move/move_base.hpp"
+#include "move/two_wheels.hpp"
+
+
+#define DEBUG_SERIAL Serial
+HardwareSerial &DXL_SERIAL = Serial2;
+HardwareSerial &LIDAR_SERIAL = Serial1;
+
+#define MICROROS_AGENT_PORT 8888
+#define MICROROS_AGENT_IP "192.168.0.117" //※ HOST PC IP
+
+
+#define SD_SPI_CS_PIN 4
+#define SD_SWITCH_PIN 4
+Adafruit_AW9523 aw;
+void aw9523_begin()
+{
+  Wire.begin(12,11);
+  if (! aw.begin(0x58, &Wire)) {
+    Serial.println("AW9523 not found? Check wiring!");
+    while (1) delay(10);  // halt forever
+  }
+  Serial.println("AW9523 found!");
+  aw.pinMode(SD_SWITCH_PIN, INPUT);
+}
+
+bool sd_exist()
+{
+  return !aw.digitalRead(SD_SWITCH_PIN);
+}
+
+constexpr uint8_t LIDAR_RX = 9;
+constexpr uint8_t LIDAR_TX = 8;
+
+constexpr uint8_t RX_SERVO = 18; //9
+constexpr uint8_t TX_SERVO = 17; //8
+
+// 右 id
+constexpr uint8_t DXL_ID_LW = 0;
+// 左 id
+constexpr uint8_t DXL_ID_RW = 1;
+
+constexpr float DXL_PROTOCOL_VERSION = 2.0;
+
+constexpr float MAX_RPM = 101.0;// M288
+// constexpr float MAX_RPM = 370.0; // M077
+
+constexpr float WHEEL_RADIUS = 0.0285; // [m]
+constexpr float WHEEL_D = 48.0 * common_utils::constants::mm_to_m; // [m] 車輪間距離
 
 constexpr float LPF_ALPHA = 0.88;
 constexpr float COMP_ALPHA = 0.95;
+// モーターの設定
+// mode
+//  OP_CURRENT
+//  OP_VELOCITY
+//  OP_POSITION
+//  OP_EXTENDED_POSITION
+//  OP_CURRENT_BASED_POSITION
+//  OP_PWM
+// DXLMotor m_lw(DXL_ID_LW, OP_CURRENT);
+DXLMotor m_lw(DXL_ID_LW, OP_VELOCITY);
+// DXLMotor m_rw(DXL_ID_RW, OP_CURRENT);
+DXLMotor m_rw(DXL_ID_RW, OP_VELOCITY);
 
 // gyro
 constexpr float CALIB_TIME = 2.0;
@@ -42,7 +111,12 @@ void gyro_caliblation()
 }
 
 // filter
+common_lib::LowpassFilterf lpf_x(0.7); //0.09
+common_lib::LowpassFilterf lpf_y(0.95);
 common_lib::LowpassFilterf lpf_acc_x(LPF_ALPHA);
 common_lib::LowpassFilterf lpf_acc_y(LPF_ALPHA);
 common_lib::ComplementaryFilterf comp_filter_x(COMP_ALPHA);
 common_lib::ComplementaryFilterf comp_filter_y(COMP_ALPHA);
+
+
+std::shared_ptr<kinematics::MoveBasef> move_;
