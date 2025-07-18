@@ -65,8 +65,7 @@ constexpr float MAX_RPM = 101.0;// M288
 constexpr float WHEEL_RADIUS = 0.0285; // [m]
 constexpr float WHEEL_D = 48.0 * common_utils::constants::mm_to_m; // [m] 車輪間距離
 
-constexpr float LPF_ALPHA = 0.88;
-constexpr float COMP_ALPHA = 0.95;
+#define GYRO_MIN_VALUE -0.005f
 // モーターの設定
 // mode
 //  OP_CURRENT
@@ -110,13 +109,21 @@ void gyro_caliblation()
   M5.Display.endWrite();
 }
 
-// filter
-common_lib::LowpassFilterf lpf_x(0.7); //0.09
-common_lib::LowpassFilterf lpf_y(0.95);
-common_lib::LowpassFilterf lpf_acc_x(LPF_ALPHA);
-common_lib::LowpassFilterf lpf_acc_y(LPF_ALPHA);
-common_lib::ComplementaryFilterf comp_filter_x(COMP_ALPHA);
-common_lib::ComplementaryFilterf comp_filter_y(COMP_ALPHA);
-
-
 std::shared_ptr<kinematics::MoveBasef> move_;
+
+enum class DisplayMode
+{
+  NONE,
+  AVATAR,
+  RESET,
+  INFO,
+  OTA,
+  LIDAR,
+};
+DisplayMode display_mode = DisplayMode::NONE;
+
+#include <Avatar.h>
+using namespace m5avatar;
+Avatar avatar;
+
+bool reset_flag = false;

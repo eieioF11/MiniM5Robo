@@ -11,6 +11,12 @@ void ota_handle( void * parameter ) {
   }
 }
 #endif
+
+bool ota_started = false;
+unsigned int ota_progress = 0;
+std::string ota_error = "";
+
+
 std::string hostname = "f11esp32";
 const IPAddress ip(192, 168, 1, 11);
 const IPAddress gateway(192, 168, 1, 1);
@@ -44,20 +50,25 @@ void setupOTA_AP() {
 
       // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
       Serial.println("Start updating " + type);
+      ota_started = true;
     })
     .onEnd([]() {
       Serial.println("\nEnd");
+      ota_started = false;
     })
     .onProgress([](unsigned int progress, unsigned int total) {
+      ota_progress = (progress / (total / 100));
       Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
     })
     .onError([](ota_error_t error) {
       Serial.printf("Error[%u]: ", error);
-      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-      else if (error == OTA_END_ERROR) Serial.println("End Failed");
+      if (error == OTA_AUTH_ERROR) ota_error = "Auth Failed";
+      else if (error == OTA_BEGIN_ERROR) ota_error = "Begin Failed";
+      else if (error == OTA_CONNECT_ERROR) ota_error = "Connect Failed";
+      else if (error == OTA_RECEIVE_ERROR) ota_error = "Receive Failed";
+      else if (error == OTA_END_ERROR) ota_error = "End Failed";
+      Serial.println(ota_error.c_str());
+      ota_started = false;
     });
 
   ArduinoOTA.begin();
@@ -97,20 +108,25 @@ void setupOTA() {
 
       // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
       Serial.println("Start updating " + type);
+      ota_started = true;
     })
     .onEnd([]() {
       Serial.println("\nEnd");
+      ota_started = false;
     })
     .onProgress([](unsigned int progress, unsigned int total) {
       Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+      ota_progress = (progress / (total / 100));
     })
     .onError([](ota_error_t error) {
       Serial.printf("Error[%u]: ", error);
-      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-      else if (error == OTA_END_ERROR) Serial.println("End Failed");
+      if (error == OTA_AUTH_ERROR) ota_error = "Auth Failed";
+      else if (error == OTA_BEGIN_ERROR) ota_error = "Begin Failed";
+      else if (error == OTA_CONNECT_ERROR) ota_error = "Connect Failed";
+      else if (error == OTA_RECEIVE_ERROR) ota_error = "Receive Failed";
+      else if (error == OTA_END_ERROR) ota_error = "End Failed";
+      Serial.println(ota_error.c_str());
+      ota_started = false;
     });
 
   ArduinoOTA.begin();
@@ -151,20 +167,25 @@ void setupOTA(const char* ssid, const char* password) {
 
       // NOTE: if updating SPIFFS this would be the place to unmount SPIFFS using SPIFFS.end()
       Serial.println("Start updating " + type);
+      ota_started = true;
     })
     .onEnd([]() {
       Serial.println("\nEnd");
+      ota_started = false;
     })
     .onProgress([](unsigned int progress, unsigned int total) {
       Serial.printf("Progress: %u%%\r", (progress / (total / 100)));
+      ota_progress = (progress / (total / 100));
     })
     .onError([](ota_error_t error) {
       Serial.printf("Error[%u]: ", error);
-      if (error == OTA_AUTH_ERROR) Serial.println("Auth Failed");
-      else if (error == OTA_BEGIN_ERROR) Serial.println("Begin Failed");
-      else if (error == OTA_CONNECT_ERROR) Serial.println("Connect Failed");
-      else if (error == OTA_RECEIVE_ERROR) Serial.println("Receive Failed");
-      else if (error == OTA_END_ERROR) Serial.println("End Failed");
+      if (error == OTA_AUTH_ERROR) ota_error = "Auth Failed";
+      else if (error == OTA_BEGIN_ERROR) ota_error = "Begin Failed";
+      else if (error == OTA_CONNECT_ERROR) ota_error = "Connect Failed";
+      else if (error == OTA_RECEIVE_ERROR) ota_error = "Receive Failed";
+      else if (error == OTA_END_ERROR) ota_error = "End Failed";
+      Serial.println(ota_error.c_str());
+      ota_started = false;
     });
 
   ArduinoOTA.begin();
