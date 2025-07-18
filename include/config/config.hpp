@@ -114,11 +114,12 @@ std::shared_ptr<kinematics::MoveBasef> move_;
 enum class DisplayMode
 {
   NONE=0,
-  AVATAR=1,
-  LIDAR=2,
-  INFO=3,
-  RESET=4,
-  OTA=5,
+  AVATAR,
+  LIDAR,
+  CAMERA,
+  INFO,
+  RESET,
+  OTA,
 };
 DisplayMode display_mode = DisplayMode::NONE;
 void sift_display_mode(bool reverse = false)

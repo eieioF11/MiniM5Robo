@@ -9,6 +9,7 @@
 #include "utility/math_util.hpp"
 #include "utility/dynamixel_utils.hpp"
 #include <MadgwickAHRS.h>
+#include "config/wifi_info.hpp"
 // micro-ROS
 #include <time.h>
 #include "ros/wifi.h"
@@ -25,6 +26,7 @@
 #include <freertos/task.h>
 #define ESP32_RTOS
 #include "ota/ota.h"
+#include "camera/camera.hpp"
 
 rcl_publisher_t imu_pub;
 rcl_publisher_t laser_scan_pub;
@@ -47,7 +49,8 @@ float odom_yaw = 0.0f;
 float gx, gy, gz;
 float ax, ay, az;
 
-LiDAR lidar(LIDAR_SERIAL);
+// LiDAR::VI4300 lidar(LIDAR_SERIAL);
+Camera::GC0308 camera;
 
 bool dynamixel_init = false;
 void main_task(void *arg);
@@ -55,7 +58,6 @@ void control_task(void *arg);
 void odom_task(void *arg);
 void sensor_task(void *arg);
 void lidar_task(void *arg);
-void publish_task(void *arg);
 
 // callback function
 void subscription_callback(const void *msgin)
@@ -69,17 +71,19 @@ void timer_callback(rcl_timer_t *timer, int64_t last_call_time)
   time_t now = time(NULL);
   rcl_publish(&imu_pub, &imu_msg, NULL);
   rcl_publish(&odom_pub, &odom_msg, NULL);
-  rcl_publish(&laser_scan_pub, &lidar.laser_scan_msg, NULL);
+  // rcl_publish(&laser_scan_pub, &lidar.laser_scan_msg, NULL);
 }
 
 bool odom_reset = false;
 bool imu_reset = false;
 
-void setup(void)
+void setup()
 {
   auto cfg = M5.config();
   M5.begin(cfg);
+  Serial.begin(115200);
   // ディスプレイ設定
+  M5.Display.setFont(&fonts::efontJA_10);
   M5.Display.fillScreen(BLACK);
   M5.Display.setCursor(0, 0);
   M5.Display.setTextSize(2);
@@ -87,7 +91,7 @@ void setup(void)
   LovyanGFX *gfx = &M5.Display;
   unifiedButton.begin(&M5.Display);
   int32_t w{gfx->width() / 3};
-  int32_t h{24};
+  int32_t h{32};
   int32_t left{(gfx->width() - w * 3) / 2};
   int32_t top{gfx->height() - h};
   auto btnA = unifiedButton.getButtonA();
@@ -100,8 +104,8 @@ void setup(void)
   assert(btnC);
   btnC->initButtonUL(unifiedButton.gfx(), left + w * 2, top, w, h, TFT_DARKGRAY, TFT_BLACK, TFT_DARKGRAY, ">");
   // setup ota
-  Serial.begin(115200);
-  setupOTA();
+  // setupOTA();
+  setupOTA(WIFI_SSID, WIFI_PASSWORD);
 
   M5.Display.setCursor(0, 0);
   M5.Display.printf("Connecting to WiFi...\n");
@@ -123,6 +127,7 @@ void setup(void)
   // NTPサーバーに接続して時間を調整する
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
   delay(3000);
+  // micro-ROS
   allocator = rcl_get_default_allocator();
   rclc_support_init(&support, 0, NULL, &allocator);
   rclc_node_init_default(&node, "mini_m5_robo_node", "", &support);
@@ -151,12 +156,13 @@ void setup(void)
   xTaskCreatePinnedToCore(main_task, "main task", 10000, NULL, 10, NULL, 1);
   xTaskCreatePinnedToCore(control_task, "control task", 4048, NULL, 5, NULL, 0);
   xTaskCreatePinnedToCore(sensor_task, "sensor task", 4048, NULL, 3, NULL, 1);
-  xTaskCreatePinnedToCore(lidar_task, "lidar task", 10000, NULL, 5, NULL, 0);
+  // xTaskCreatePinnedToCore(lidar_task, "lidar task", 10000, NULL, 5, NULL, 0);
   xTaskCreatePinnedToCore(odom_task, "odom task", 4048, NULL, 4, NULL, 0);
 
   Serial.printf("Start\n");
   avatar.setBatteryIcon(true);
   avatar.init();
+  camera.begin();
 }
 
 void loop()
@@ -280,8 +286,17 @@ void main_task(void *arg)
     case DisplayMode::LIDAR:
       last_display_mode = display_mode;
       M5.Display.fillScreen(BLACK);
-      lidar.draw_pointcloud();
+      // lidar.draw_pointcloud();
       break;
+    case DisplayMode::CAMERA:
+      last_display_mode = display_mode;
+      camera.capture();
+      camera.draw();
+      camera.returnFrameBuffer();
+      M5.Display.startWrite();
+      M5.Display.setCursor(0, 0);
+      M5.Display.printf("Camera Mode\n");
+      M5.Display.endWrite();
     default:
       break;
     }
@@ -440,16 +455,16 @@ void sensor_task(void *arg)
 void lidar_task(void *arg)
 {
   using namespace common_utils;
-  lidar.begin(LIDAR_RX, LIDAR_TX);
-  lidar.set_visualize(true);
-  lidar.laser_scan_msg.header.frame_id.data = (char *)"laser_frame";
-  lidar.laser_scan_msg.header.frame_id.size = strlen(lidar.laser_scan_msg.header.frame_id.data);
-  lidar.laser_scan_msg.header.frame_id.capacity = lidar.laser_scan_msg.header.frame_id.size + 1;
-  while (1)
-  {
-    lidar.update();
-    lidar.laser_scan_msg.header.stamp.sec = (int32_t)time(NULL);
-    lidar.laser_scan_msg.header.stamp.nanosec = (uint32_t)(micros() % 1000000);
-    vTaskDelay(pdMS_TO_TICKS(10));
-  }
+  // lidar.begin(LIDAR_RX, LIDAR_TX);
+  // lidar.set_visualize(true);
+  // lidar.laser_scan_msg.header.frame_id.data = (char *)"laser_frame";
+  // lidar.laser_scan_msg.header.frame_id.size = strlen(lidar.laser_scan_msg.header.frame_id.data);
+  // lidar.laser_scan_msg.header.frame_id.capacity = lidar.laser_scan_msg.header.frame_id.size + 1;
+  // while (1)
+  // {
+  //   lidar.update();
+  //   lidar.laser_scan_msg.header.stamp.sec = (int32_t)time(NULL);
+  //   lidar.laser_scan_msg.header.stamp.nanosec = (uint32_t)(micros() % 1000000);
+  //   vTaskDelay(pdMS_TO_TICKS(10));
+  // }
 }

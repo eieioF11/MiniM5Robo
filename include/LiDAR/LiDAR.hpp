@@ -5,6 +5,8 @@
 #include <cmath>
 #include <sensor_msgs/msg/laser_scan.h>
 
+namespace LiDAR
+{
 template <typename T>
 struct point_t
 {
@@ -19,7 +21,7 @@ struct point_t
  * 精度 1%
  *
  */
-class LiDAR
+class VI4300
 {
 private:
   HardwareSerial LiDAR_serial_;
@@ -131,7 +133,7 @@ private:
 
 public:
   sensor_msgs__msg__LaserScan laser_scan_msg;
-  LiDAR(HardwareSerial &LiDAR_serial) : LiDAR_serial_(LiDAR_serial)
+  VI4300(HardwareSerial &LiDAR_serial) : LiDAR_serial_(LiDAR_serial)
   {
     laser_scan_msg.time_increment = 0.1; // Example value, adjust as needed
     laser_scan_msg.scan_time = 0.1;      // Example value, adjust as needed
@@ -155,8 +157,8 @@ public:
 
   void begin(uint8_t rx, uint8_t tx, bool visualize = true)
   {
-    // LiDAR_serial_.begin(230400, SERIAL_8N1, rx, tx);
-    LiDAR_serial_.begin(921600, SERIAL_8N1, rx, tx);
+    LiDAR_serial_.begin(230400, SERIAL_8N1, rx, tx);
+    // LiDAR_serial_.begin(921600, SERIAL_8N1, rx, tx);
     visualize_ = visualize;
   }
 
@@ -273,3 +275,4 @@ public:
     return point_cloud_;
   }
 };
+} // namespace LiDAR
