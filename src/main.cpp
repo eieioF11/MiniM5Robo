@@ -38,7 +38,6 @@ rcl_timer_t rcl_timer;
 
 geometry_msgs__msg__Twist cmd_vel_msg;
 sensor_msgs__msg__Imu imu_msg;
-sensor_msgs__msg__LaserScan laser_scan_msg;
 nav_msgs__msg__Odometry odom_msg;
 
 goblib::UnifiedButton unifiedButton;
@@ -68,9 +67,9 @@ void subscription_callback(const void *msgin)
 void timer_callback(rcl_timer_t *timer, int64_t last_call_time)
 {
   time_t now = time(NULL);
-  // rcl_publish(&imu_pub, &imu_msg, NULL);
+  rcl_publish(&imu_pub, &imu_msg, NULL);
   rcl_publish(&odom_pub, &odom_msg, NULL);
-  // rcl_publish(&laser_scan_pub, &laser_scan_msg, NULL);
+  rcl_publish(&laser_scan_pub, &lidar.laser_scan_msg, NULL);
 }
 
 bool odom_reset = false;
@@ -139,7 +138,7 @@ void setup(void)
       "/cmd_vel");
 
   // Timer
-  rclc_timer_init_default(&rcl_timer, &support, RCL_MS_TO_NS(500), timer_callback);
+  rclc_timer_init_default(&rcl_timer, &support, RCL_MS_TO_NS(150), timer_callback);
 
   // Executor
   int callback_size = 2;
@@ -152,7 +151,7 @@ void setup(void)
   xTaskCreatePinnedToCore(main_task, "main task", 10000, NULL, 10, NULL, 1);
   xTaskCreatePinnedToCore(control_task, "control task", 4048, NULL, 5, NULL, 0);
   xTaskCreatePinnedToCore(sensor_task, "sensor task", 4048, NULL, 3, NULL, 1);
-  // xTaskCreatePinnedToCore(lidar_task, "lidar task", 4048, NULL, 2, NULL, 0);
+  xTaskCreatePinnedToCore(lidar_task, "lidar task", 10000, NULL, 5, NULL, 0);
   xTaskCreatePinnedToCore(odom_task, "odom task", 4048, NULL, 4, NULL, 0);
 
   Serial.printf("Start\n");
@@ -162,7 +161,7 @@ void setup(void)
 
 void loop()
 {
-  rclc_executor_spin_some(&executor, RCL_MS_TO_NS(100));
+  rclc_executor_spin_some(&executor, RCL_MS_TO_NS(50));
 }
 
 void main_task(void *arg)
@@ -171,6 +170,7 @@ void main_task(void *arg)
   DisplayMode last_display_mode = display_mode;
   bool avater_started = true;
   bool ota_start_flag = false;
+  common_utils::rpy_t deg_rpy;
   while (true)
   {
     M5.update();
@@ -212,9 +212,12 @@ void main_task(void *arg)
     }
     if (M5.BtnA.wasPressed())
     {
-      display_mode = DisplayMode::INFO;
-      avater_started = false;
-      avatar.suspend();
+      sift_display_mode();
+      if (display_mode != DisplayMode::AVATAR)
+      {
+        avatar.suspend();
+        avater_started = false;
+      }
       M5.Display.fillScreen(BLACK);
     }
     else if (M5.BtnB.wasPressed())
@@ -222,7 +225,12 @@ void main_task(void *arg)
     }
     else if (M5.BtnC.wasPressed())
     {
-      display_mode = DisplayMode::AVATAR;
+      sift_display_mode(true);
+      if (display_mode != DisplayMode::AVATAR)
+      {
+        avatar.suspend();
+        avater_started = false;
+      }
       M5.Display.fillScreen(BLACK);
     }
     // display
@@ -258,18 +266,21 @@ void main_task(void *arg)
       M5.Display.endWrite();
       break;
     case DisplayMode::INFO:
+      deg_rpy = common_utils::to_degrees(est_rpy);
       M5.Display.startWrite();
       M5.Display.setCursor(0, 0);
       M5.Display.printf("ip:%s\n", WiFi.localIP().toString().c_str());
       M5.Display.printf("Battery: %d%% Chg %d\n", M5.Power.getBatteryLevel(), M5.Power.isCharging());
       M5.Display.printf("v:%.2f, w:%.2f\n", cmd_vel_msg.linear.x, cmd_vel_msg.angular.z);
       M5.Display.printf("x:%.2f, y:%.2f, yaw:%.2f\n", odom_msg.pose.pose.position.x, odom_msg.pose.pose.position.y, odom_yaw);
-      M5.Display.printf("r:%.2f, p:%.2f, y:%.2f\n", est_rpy.roll * RAD_TO_DEG, est_rpy.pitch * RAD_TO_DEG, est_rpy.yaw * RAD_TO_DEG);
+      M5.Display.printf("r:%.2f, p:%.2f, y:%.2f\n", deg_rpy.roll, deg_rpy.pitch, deg_rpy.yaw);
       M5.Display.endWrite();
       last_display_mode = display_mode;
       break;
     case DisplayMode::LIDAR:
       last_display_mode = display_mode;
+      M5.Display.fillScreen(BLACK);
+      lidar.draw_pointcloud();
       break;
     default:
       break;
@@ -417,10 +428,11 @@ void sensor_task(void *arg)
     imu_msg.angular_velocity.x = gx;
     imu_msg.angular_velocity.y = gy;
     imu_msg.angular_velocity.z = gz;
-    // imu_msg.orientation.x = 0.0;
-    // imu_msg.orientation.y = 0.0;
-    // imu_msg.orientation.z = sin(est_rpy.yaw / 2.0);
-    // imu_msg.orientation.w = cos(est_rpy.yaw / 2.0);
+    quat_t q = to_quat(est_rpy);
+    imu_msg.orientation.x = q.x;
+    imu_msg.orientation.y = q.y;
+    imu_msg.orientation.z = q.z;
+    imu_msg.orientation.w = q.w;
     vTaskDelay(pdMS_TO_TICKS(20));
   }
 }
@@ -430,34 +442,14 @@ void lidar_task(void *arg)
   using namespace common_utils;
   lidar.begin(LIDAR_RX, LIDAR_TX);
   lidar.set_visualize(true);
-  laser_scan_msg.header.frame_id.data = (char *)"laser_frame";
-  laser_scan_msg.header.frame_id.size = strlen(laser_scan_msg.header.frame_id.data);
-  laser_scan_msg.header.frame_id.capacity = laser_scan_msg.header.frame_id.size + 1;
+  lidar.laser_scan_msg.header.frame_id.data = (char *)"laser_frame";
+  lidar.laser_scan_msg.header.frame_id.size = strlen(lidar.laser_scan_msg.header.frame_id.data);
+  lidar.laser_scan_msg.header.frame_id.capacity = lidar.laser_scan_msg.header.frame_id.size + 1;
   while (1)
   {
-    if (lidar.update())
-    {
-      laser_scan_t scan = lidar.get_laser_scan();
-
-      laser_scan_msg.header.stamp.sec = (int32_t)time(NULL);
-      laser_scan_msg.header.stamp.nanosec = (uint32_t)(micros() % 1000000);
-      laser_scan_msg.angle_min = scan.angle_min;
-      laser_scan_msg.angle_max = scan.angle_max;
-      laser_scan_msg.angle_increment = scan.angle_increment;
-      laser_scan_msg.time_increment = scan.time_increment;
-      laser_scan_msg.scan_time = scan.scan_time;
-      laser_scan_msg.range_min = scan.range_min;
-      laser_scan_msg.range_max = scan.range_max;
-      laser_scan_msg.ranges.size = scan.ranges.size();
-      laser_scan_msg.ranges.data = (float *)malloc(scan.ranges.size() * sizeof(float));
-      laser_scan_msg.intensities.size = scan.intensities.size();
-      laser_scan_msg.intensities.data = (float *)malloc(scan.intensities.size() * sizeof(float));
-      for (size_t i = 0; i < scan.ranges.size(); i++)
-      {
-        laser_scan_msg.ranges.data[i] = scan.ranges[i];
-        laser_scan_msg.intensities.data[i] = scan.intensities[i];
-      }
-    }
-    vTaskDelay(pdMS_TO_TICKS(20));
+    lidar.update();
+    lidar.laser_scan_msg.header.stamp.sec = (int32_t)time(NULL);
+    lidar.laser_scan_msg.header.stamp.nanosec = (uint32_t)(micros() % 1000000);
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 }

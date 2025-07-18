@@ -3,6 +3,7 @@
 #include <M5Unified.h>
 #include <vector>
 #include <cmath>
+#include <sensor_msgs/msg/laser_scan.h>
 
 template <typename T>
 struct point_t
@@ -11,19 +12,13 @@ struct point_t
   T y;
 };
 
-struct laser_scan_t
-{
-  float angle_min;
-  float angle_max;
-  float angle_increment;
-  float time_increment;
-  float scan_time;
-  float range_min;
-  float range_max;
-  std::vector<float> ranges;
-  std::vector<float> intensities;
-};
-
+/**
+ * @brief VI4300
+ * 距離 0.05 m ~ 12 m
+ * 分解能 1.5 cm
+ * 精度 1%
+ *
+ */
 class LiDAR
 {
 private:
@@ -115,59 +110,53 @@ private:
 
   void plot_point(point_t<double> p, uint32_t color)
   {
-    if (visualize_)
-      M5.Display.drawPixel((uint32_t)(p.x * 100.0) + 160, (uint32_t)(p.y * 100.0) + 120, color);
+    M5.Display.drawPixel((uint32_t)(p.x * 100.0) + 160, (uint32_t)(p.y * 100.0) + 120, color);
   }
 
-  void set_laser_scan(uint16_t *degrees, uint16_t *distances)
-  {
-    laser_scan_.angle_min = degrees[0] * (M_PI / 180.0);
-    laser_scan_.angle_max = degrees[15] * (M_PI / 180.0);
-    laser_scan_.angle_increment = (laser_scan_.angle_max - laser_scan_.angle_min) / 15.0;
-    laser_scan_.time_increment = 0.1; // Example value, adjust as needed
-    laser_scan_.scan_time = 0.1; // Example value, adjust as needed
-    laser_scan_.range_min = 0.02; // Minimum range in meters
-    laser_scan_.range_max = 4.0; // Maximum range in meters
-    laser_scan_.ranges.resize(16);
-    laser_scan_.intensities.resize(16);
-
-    for (int i = 0; i < 16; i++)
-    {
-      laser_scan_.ranges[i] = distances[i] * 0.001; // Convert mm to m
-      laser_scan_.intensities[i] = 100; // Example intensity value, adjust as needed
-    }
-  }
-
-  void calc_point_cloud(uint16_t *degrees, uint16_t *distances)
-  {
-    for (int32_t i = 0; i < 16; i++)
-    {
-      plot_point(point_cloud_[degrees[i]], BLACK); // 描画削除
-      point_cloud_[degrees[i]].x = std::cos((1.f * PI * degrees[i]) / 180) * (distances[i] * 0.001);
-      point_cloud_[degrees[i]].y = std::sin((1.f * PI * degrees[i]) / 180) * (distances[i] * 0.001);
-      if (distances[i] < 1200)
-        plot_point(point_cloud_[degrees[i]], WHITE);
-    }
-  }
+  // void set_laser_scan(uint16_t *degrees, uint16_t *distances)
+  // {
+  //   for (int i = 0; i < 16; i++)
+  //     laser_scan_msg.ranges.data[degrees[i]] = distances[i] * 0.001;
+  // }
 
   State_t state_;
   uint32_t counter_;
   uint8_t payload_[64];
 
-  laser_scan_t laser_scan_;
+  uint16_t rotation_speed_;
+
   std::vector<point_t<double>> point_cloud_; // 360度分の点群
 
   bool visualize_ = false;
 
 public:
+  sensor_msgs__msg__LaserScan laser_scan_msg;
   LiDAR(HardwareSerial &LiDAR_serial) : LiDAR_serial_(LiDAR_serial)
   {
-    point_cloud_.resize(360);
+    laser_scan_msg.time_increment = 0.1; // Example value, adjust as needed
+    laser_scan_msg.scan_time = 0.1;      // Example value, adjust as needed
+    laser_scan_msg.range_min = 0.05;     // Minimum range in meters
+    laser_scan_msg.range_max = 12.0;      // Maximum range in meters
+    laser_scan_msg.angle_min = 0;
+    laser_scan_msg.angle_max = TWO_PI;
+    laser_scan_msg.angle_increment = (laser_scan_msg.angle_max - laser_scan_msg.angle_min) / 360.0;
+    laser_scan_msg.ranges.size = 360;
+    laser_scan_msg.ranges.data = (float *)malloc(360 * sizeof(float));
+    laser_scan_msg.intensities.size = 360;
+    laser_scan_msg.intensities.data = (float *)malloc(360 * sizeof(float));
+    for (int i = 0; i < 360; i++)
+    {
+      laser_scan_msg.ranges.data[i] = 0.0;        // Initialize ranges to 0
+      laser_scan_msg.intensities.data[i] = 100.0; // Initialize intensities to 0
+      point_cloud_[i].x = 0.0;
+      point_cloud_[i].y = 0.0;
+    }
   }
 
   void begin(uint8_t rx, uint8_t tx, bool visualize = true)
   {
-    LiDAR_serial_.begin(230400, SERIAL_8N1, rx, tx);
+    // LiDAR_serial_.begin(230400, SERIAL_8N1, rx, tx);
+    LiDAR_serial_.begin(921600, SERIAL_8N1, rx, tx);
     visualize_ = visualize;
   }
 
@@ -229,50 +218,55 @@ public:
           degree_end = convertDegree(packet->angle_end);
           if ((degree_begin < 360) && (degree_end < 360))
           {
-            printf("%3drpm %5d - %5d\n", convertSpeed(packet->rotation_speed), convertDegree(packet->angle_begin), convertDegree(packet->angle_end));
-            uint16_t map[16];
-            uint16_t distances[16];
-            remapDegrees(degree_begin, degree_end, map);
-            distances[0] = packet->distance_0 & 0x3FFF;
-            distances[1] = packet->distance_1 & 0x3FFF;
-            distances[2] = packet->distance_2 & 0x3FFF;
-            distances[3] = packet->distance_3 & 0x3FFF;
-            distances[4] = packet->distance_4 & 0x3FFF;
-            distances[5] = packet->distance_5 & 0x3FFF;
-            distances[6] = packet->distance_6 & 0x3FFF;
-            distances[7] = packet->distance_7 & 0x3FFF;
-            distances[8] = packet->distance_8 & 0x3FFF;
-            distances[9] = packet->distance_9 & 0x3FFF;
-            distances[10] = packet->distance_10 & 0x3FFF;
-            distances[11] = packet->distance_11 & 0x3FFF;
-            distances[12] = packet->distance_12 & 0x3FFF;
-            distances[13] = packet->distance_13 & 0x3FFF;
-            distances[14] = packet->distance_14 & 0x3FFF;
-            distances[15] = packet->distance_15 & 0x3FFF;
-            set_laser_scan(map, distances);
-            if (visualize_)
-              calc_point_cloud(map, distances);
+            uint16_t degrees[16];
+            // uint16_t distances[16];
+            remapDegrees(degree_begin, degree_end, degrees);
+            laser_scan_msg.ranges.data[degrees[0]] = 0.001 * (packet->distance_0 & 0x3FFF);
+            laser_scan_msg.ranges.data[degrees[1]] = 0.001 * (packet->distance_1 & 0x3FFF);
+            laser_scan_msg.ranges.data[degrees[2]] = 0.001 * (packet->distance_2 & 0x3FFF);
+            laser_scan_msg.ranges.data[degrees[3]] = 0.001 * (packet->distance_3 & 0x3FFF);
+            laser_scan_msg.ranges.data[degrees[4]] = 0.001 * (packet->distance_4 & 0x3FFF);
+            laser_scan_msg.ranges.data[degrees[5]] = 0.001 * (packet->distance_5 & 0x3FFF);
+            laser_scan_msg.ranges.data[degrees[6]] = 0.001 * (packet->distance_6 & 0x3FFF);
+            laser_scan_msg.ranges.data[degrees[7]] = 0.001 * (packet->distance_7 & 0x3FFF);
+            laser_scan_msg.ranges.data[degrees[8]] = 0.001 * (packet->distance_8 & 0x3FFF);
+            laser_scan_msg.ranges.data[degrees[9]] = 0.001 * (packet->distance_9 & 0x3FFF);
+            laser_scan_msg.ranges.data[degrees[10]] = 0.001 * (packet->distance_10 & 0x3FFF);
+            laser_scan_msg.ranges.data[degrees[11]] = 0.001 * (packet->distance_11 & 0x3FFF);
+            laser_scan_msg.ranges.data[degrees[12]] = 0.001 * (packet->distance_12 & 0x3FFF);
+            laser_scan_msg.ranges.data[degrees[13]] = 0.001 * (packet->distance_13 & 0x3FFF);
+            laser_scan_msg.ranges.data[degrees[14]] = 0.001 * (packet->distance_14 & 0x3FFF);
+            laser_scan_msg.ranges.data[degrees[15]] = 0.001 * (packet->distance_15 & 0x3FFF);
+            // set_laser_scan(map, distances);
           }
         }
-        if (visualize_)
-        {
-          M5.Display.startWrite();
-          M5.Display.setCursor(0, 0);
-          M5.Display.printf("Speed : %d rpm  \n", convertSpeed(packet->rotation_speed));
-          M5.Display.endWrite();
-        }
-        state_ = STATE_WAIT_HEADER;
         counter_ = 0;
         state_ = STATE_WAIT_HEADER;
-        break;
+        rotation_speed_ = packet->rotation_speed;
       }
       return true;
     }
     return false;
   }
-  laser_scan_t get_laser_scan()
+  void draw_pointcloud()
   {
-    return laser_scan_;
+    if (visualize_)
+    {
+      M5.Display.startWrite();
+      M5.Display.setCursor(0, 0);
+      M5.Display.printf("Speed : %d rpm  \n", convertSpeed(rotation_speed_));
+      M5.Display.endWrite();
+      // calc_point_cloud(map, distances_);
+      for (int32_t i = 0; i < 360; i++)
+      {
+        float angle_rad = (i * DEG_TO_RAD);
+        float dist = laser_scan_msg.ranges.data[i];
+        point_t<double> point;
+        point.x = std::cos(angle_rad) * dist;
+        point.y = std::sin(angle_rad) * dist;
+        plot_point(point, WHITE);
+      }
+    }
   }
   std::vector<point_t<double>> get_pointcloud()
   {

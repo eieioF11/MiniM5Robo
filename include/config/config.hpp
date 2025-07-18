@@ -113,14 +113,27 @@ std::shared_ptr<kinematics::MoveBasef> move_;
 
 enum class DisplayMode
 {
-  NONE,
-  AVATAR,
-  RESET,
-  INFO,
-  OTA,
-  LIDAR,
+  NONE=0,
+  AVATAR=1,
+  LIDAR=2,
+  INFO=3,
+  RESET=4,
+  OTA=5,
 };
 DisplayMode display_mode = DisplayMode::NONE;
+void sift_display_mode(bool reverse = false)
+{
+  static int mode = static_cast<int>(display_mode);
+  if (reverse)
+    mode--;
+  else
+    mode++;
+  if (mode < static_cast<int>(DisplayMode::AVATAR))
+    mode = static_cast<int>(DisplayMode::INFO);
+  if (mode > static_cast<int>(DisplayMode::INFO))
+    mode = static_cast<int>(DisplayMode::AVATAR);
+  display_mode = static_cast<DisplayMode>(mode);
+}
 
 #include <Avatar.h>
 using namespace m5avatar;
