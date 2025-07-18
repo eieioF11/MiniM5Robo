@@ -29,7 +29,9 @@ namespace Camera
       .ledc_channel = LEDC_CHANNEL_0,
 
       .pixel_format = PIXFORMAT_RGB565,
+      // .pixel_format = PIXFORMAT_JPEG,
       .frame_size = FRAMESIZE_QVGA,
+      // .jpeg_quality = 4,
       .jpeg_quality = 0,
       .fb_count = 2,
       .fb_location = CAMERA_FB_IN_PSRAM,

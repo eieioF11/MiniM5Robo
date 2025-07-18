@@ -20,7 +20,11 @@
 #include <geometry_msgs/msg/twist.h>
 #include <sensor_msgs/msg/imu.h>
 #include <sensor_msgs/msg/laser_scan.h>
+// #include <sensor_msgs/msg/image.h>
+#include <sensor_msgs/msg/compressed_image.h>
 #include <nav_msgs/msg/odometry.h>
+#include <micro_ros_utilities/type_utilities.h>
+#include <micro_ros_utilities/string_utilities.h>
 // rtos
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
@@ -31,6 +35,7 @@
 rcl_publisher_t imu_pub;
 rcl_publisher_t laser_scan_pub;
 rcl_publisher_t odom_pub;
+rcl_publisher_t image_pub;
 rcl_subscription_t cmd_vel_sub;
 rclc_executor_t executor;
 rclc_support_t support;
@@ -41,6 +46,7 @@ rcl_timer_t rcl_timer;
 geometry_msgs__msg__Twist cmd_vel_msg;
 sensor_msgs__msg__Imu imu_msg;
 nav_msgs__msg__Odometry odom_msg;
+sensor_msgs__msg__CompressedImage image_msg;
 
 goblib::UnifiedButton unifiedButton;
 
@@ -49,7 +55,7 @@ float odom_yaw = 0.0f;
 float gx, gy, gz;
 float ax, ay, az;
 
-// LiDAR::VI4300 lidar(LIDAR_SERIAL);
+LiDAR::VI4300 lidar(LIDAR_SERIAL);
 Camera::GC0308 camera;
 
 bool dynamixel_init = false;
@@ -71,7 +77,8 @@ void timer_callback(rcl_timer_t *timer, int64_t last_call_time)
   time_t now = time(NULL);
   rcl_publish(&imu_pub, &imu_msg, NULL);
   rcl_publish(&odom_pub, &odom_msg, NULL);
-  // rcl_publish(&laser_scan_pub, &lidar.laser_scan_msg, NULL);
+  rcl_publish(&laser_scan_pub, &lidar.laser_scan_msg, NULL);
+  // rcl_publish(&image_pub, &image_msg, NULL);
 }
 
 bool odom_reset = false;
@@ -127,7 +134,11 @@ void setup()
   // NTPサーバーに接続して時間を調整する
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
   delay(3000);
+  // setup camera
+  M5.Display.printf("Camera Init\n");
+  camera.begin();
   // micro-ROS
+  M5.Display.printf("micro-ROS Init\n");
   allocator = rcl_get_default_allocator();
   rclc_support_init(&support, 0, NULL, &allocator);
   rclc_node_init_default(&node, "mini_m5_robo_node", "", &support);
@@ -135,6 +146,7 @@ void setup()
   rclc_publisher_init_default(&imu_pub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu), "/imu");
   rclc_publisher_init_default(&laser_scan_pub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, LaserScan), "/scan");
   rclc_publisher_init_default(&odom_pub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "/odom");
+  // rclc_publisher_init_default(&image_pub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, CompressedImage), "/camera/compressed_image");
   // Subscriber
   rclc_subscription_init_best_effort(
       &cmd_vel_sub,
@@ -156,18 +168,17 @@ void setup()
   xTaskCreatePinnedToCore(main_task, "main task", 10000, NULL, 10, NULL, 1);
   xTaskCreatePinnedToCore(control_task, "control task", 4048, NULL, 5, NULL, 0);
   xTaskCreatePinnedToCore(sensor_task, "sensor task", 4048, NULL, 3, NULL, 1);
-  // xTaskCreatePinnedToCore(lidar_task, "lidar task", 10000, NULL, 5, NULL, 0);
+  xTaskCreatePinnedToCore(lidar_task, "lidar task", 10000, NULL, 5, NULL, 0);
   xTaskCreatePinnedToCore(odom_task, "odom task", 4048, NULL, 4, NULL, 0);
 
-  Serial.printf("Start\n");
   avatar.setBatteryIcon(true);
   avatar.init();
-  camera.begin();
+  Serial.printf("Start\n");
 }
 
 void loop()
 {
-  rclc_executor_spin_some(&executor, RCL_MS_TO_NS(50));
+  rclc_executor_spin_some(&executor, RCL_MS_TO_NS(20));
 }
 
 void main_task(void *arg)
@@ -283,25 +294,22 @@ void main_task(void *arg)
       M5.Display.endWrite();
       last_display_mode = display_mode;
       break;
-    case DisplayMode::LIDAR:
-      last_display_mode = display_mode;
-      M5.Display.fillScreen(BLACK);
-      // lidar.draw_pointcloud();
-      break;
     case DisplayMode::CAMERA:
       last_display_mode = display_mode;
       camera.capture();
       camera.draw();
       camera.returnFrameBuffer();
-      M5.Display.startWrite();
-      M5.Display.setCursor(0, 0);
-      M5.Display.printf("Camera Mode\n");
-      M5.Display.endWrite();
+      break;
+    case DisplayMode::LIDAR:
+      last_display_mode = display_mode;
+      M5.Display.fillScreen(BLACK);
+      lidar.draw_pointcloud();
+      break;
     default:
       break;
     }
     unifiedButton.draw(true);
-    vTaskDelay(pdMS_TO_TICKS(20));
+    vTaskDelay(pdMS_TO_TICKS(40));
   }
 }
 
@@ -331,7 +339,7 @@ void control_task(void *arg)
     auto wheel_speeds = move_->get_wheel_speeds();
     m_lw.move(wheel_speeds[0] * common_utils::constants::RPS_TO_RPM);
     m_rw.move(wheel_speeds[1] * common_utils::constants::RPS_TO_RPM);
-    vTaskDelay(pdMS_TO_TICKS(20));
+    vTaskDelay(pdMS_TO_TICKS(40));
   }
 }
 
@@ -347,9 +355,7 @@ void odom_task(void *arg)
   float x = 0.0;
   float y = 0.0;
   odom_yaw = 0.0;
-  odom_msg.header.frame_id.data = (char *)"odom";
-  odom_msg.header.frame_id.size = strlen(odom_msg.header.frame_id.data);
-  odom_msg.header.frame_id.capacity = odom_msg.header.frame_id.size + 1;
+  odom_msg.header.frame_id = micro_ros_string_utilities_set(odom_msg.header.frame_id, "odom");
   const float TWO_WHEEL_D = WHEEL_D * 2.0;                // 車輪間距離の2倍
   const float HALF_WHEEL_R = WHEEL_RADIUS / 2.0;          // 車輪半径の半分
   const float ANGULAR_CONST = WHEEL_RADIUS / TWO_WHEEL_D; // 角速度計算用定数
@@ -382,7 +388,7 @@ void odom_task(void *arg)
     odom_msg.pose.pose.orientation.w = cos(odom_yaw / 2.0);
     odom_msg.twist.twist.linear.x = vx;
     odom_msg.twist.twist.angular.z = angular;
-    vTaskDelay(pdMS_TO_TICKS(20));
+    vTaskDelay(pdMS_TO_TICKS(40));
   }
 }
 
@@ -391,9 +397,26 @@ void sensor_task(void *arg)
 {
   using namespace common_utils;
   uint32_t sensor_timer = micros();
-  imu_msg.header.frame_id.data = (char *)"imu_frame";
-  imu_msg.header.frame_id.size = strlen(imu_msg.header.frame_id.data);
-  imu_msg.header.frame_id.capacity = imu_msg.header.frame_id.size + 1;
+  imu_msg.header.frame_id = micro_ros_string_utilities_set(imu_msg.header.frame_id, "imu_frame");
+
+  image_msg.header.frame_id = micro_ros_string_utilities_set(image_msg.header.frame_id, "rgb_frame");
+  static micro_ros_utilities_memory_conf_t conf = {};
+  // OPTIONALLY this struct can configure the default size of strings, basic sequences and composed sequences
+  conf.max_string_capacity = 50;
+  conf.max_ros2_type_sequence_capacity = 5;
+  conf.max_basic_type_sequence_capacity = 5;
+  // OPTIONALLY this struct can store rules for specific members
+  // !! Using the API with rules will use dynamic memory allocations for handling strings !!
+  micro_ros_utilities_memory_rule_t rules[] = {
+      {"header.frame_id", 30},
+      {"format", 4},
+      {"data", 20000}};
+  conf.rules = rules;
+  conf.n_rules = sizeof(rules) / sizeof(rules[0]);
+  micro_ros_utilities_create_message_memory(
+      ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, CompressedImage),
+      &image_msg,
+      conf);
   Madgwick filter;
   std::shared_ptr<Madgwick> filter_ptr = std::make_shared<Madgwick>(filter);
   while (1)
@@ -448,23 +471,54 @@ void sensor_task(void *arg)
     imu_msg.orientation.y = q.y;
     imu_msg.orientation.z = q.z;
     imu_msg.orientation.w = q.w;
-    vTaskDelay(pdMS_TO_TICKS(20));
+    // camera.returnFrameBuffer();
+    // camera.capture();
+    // image_msg.header.stamp.sec = (int32_t)time(NULL);
+    // image_msg.header.stamp.nanosec = (uint32_t)(micros() % 1000000);
+    // size_t _jpg_buf_len = 0;
+    // uint8_t *_jpg_buf = NULL;
+    // camera_fb_t *fb = camera.getFrameBuffer();
+    // // camera_fb_t *pic = (camera_fb_t *)malloc(sizeof(camera_fb_t));
+    // if (fb != NULL)
+    // {
+    //   bool jpeg_converted = frame2jpg(fb, 80, &_jpg_buf, &_jpg_buf_len);
+    //   if (jpeg_converted)
+    //   {
+    //     if (_jpg_buf != NULL)
+    //     {
+    //       if (_jpg_buf_len <= image_msg.data.capacity)
+    //       {
+    //         image_msg.data.size = _jpg_buf_len;
+    //         memcpy(image_msg.data.data, _jpg_buf, _jpg_buf_len);
+    //         image_msg.format = micro_ros_string_utilities_set(image_msg.format, "jpeg");
+    //       }
+    //       // esp_camera_fb_return(pic);
+    //     }
+    //   }
+    //   else
+    //   {
+    //     Serial.println("Failed to convert frame to JPEG");
+    //     M5.Display.println("Failed to convert frame to JPEG");
+    //   }
+    // }
+    // else
+    // {
+    //   Serial.println("No frame buffer available");
+    //   M5.Display.println("No frame buffer available");
+    // }
+    vTaskDelay(pdMS_TO_TICKS(40));
   }
 }
 
 void lidar_task(void *arg)
 {
   using namespace common_utils;
-  // lidar.begin(LIDAR_RX, LIDAR_TX);
-  // lidar.set_visualize(true);
-  // lidar.laser_scan_msg.header.frame_id.data = (char *)"laser_frame";
-  // lidar.laser_scan_msg.header.frame_id.size = strlen(lidar.laser_scan_msg.header.frame_id.data);
-  // lidar.laser_scan_msg.header.frame_id.capacity = lidar.laser_scan_msg.header.frame_id.size + 1;
-  // while (1)
-  // {
-  //   lidar.update();
-  //   lidar.laser_scan_msg.header.stamp.sec = (int32_t)time(NULL);
-  //   lidar.laser_scan_msg.header.stamp.nanosec = (uint32_t)(micros() % 1000000);
-  //   vTaskDelay(pdMS_TO_TICKS(10));
-  // }
+  lidar.begin(LIDAR_RX, LIDAR_TX, "laser_frame");
+  while (1)
+  {
+    lidar.update();
+    lidar.laser_scan_msg.header.stamp.sec = (int32_t)time(NULL);
+    lidar.laser_scan_msg.header.stamp.nanosec = (uint32_t)(micros() % 1000000);
+    vTaskDelay(pdMS_TO_TICKS(40));
+  }
 }
