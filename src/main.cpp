@@ -418,6 +418,7 @@ void odom_task(void* arg) {
   float y                   = 0.0;
   odom_yaw                  = 0.0;
   odom_msg.header.frame_id  = micro_ros_string_utilities_set(odom_msg.header.frame_id, "odom");
+  odom_msg.child_frame_id   = micro_ros_string_utilities_set(odom_msg.child_frame_id, "base_link");
   const float TWO_WHEEL_D   = WHEEL_D * 2.0;              // 車輪間距離の2倍
   const float HALF_WHEEL_R  = WHEEL_RADIUS / 2.0;         // 車輪半径の半分
   const float ANGULAR_CONST = WHEEL_RADIUS / TWO_WHEEL_D; // 角速度計算用定数
