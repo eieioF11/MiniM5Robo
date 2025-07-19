@@ -24,7 +24,7 @@ HardwareSerial &DXL_SERIAL = Serial2;
 HardwareSerial &LIDAR_SERIAL = Serial1;
 
 #define MICROROS_AGENT_PORT 8888
-#define MICROROS_AGENT_IP "192.168.0.117" // ※ HOST PC IP
+#define MICROROS_AGENT_IP "10.173.43.160" //"192.168.0.117" // ※ HOST PC IP
 
 #define SD_SPI_CS_PIN 4
 #define SD_SWITCH_PIN 4
@@ -32,7 +32,7 @@ HardwareSerial &LIDAR_SERIAL = Serial1;
 Adafruit_AW9523 aw;
 void aw9523_begin()
 {
-  Wire.begin(12, 11);
+  // Wire.begin(12, 11);
   if (!aw.begin(0x58, &Wire))
   {
     Serial.println("AW9523 not found? Check wiring!");
@@ -149,7 +149,20 @@ std::tuple<bool, std::string, std::string, std::string, int> get_config()
     while (!SD.begin(SD_SPI_CS_PIN, SPI, 25000000))
     {
       Serial.println("SD CARD ERROR");
+      M5.Display.printf("SD CARD ERROR\n");
       delay(1000);
+    }
+    if (SD.cardSize() == CARD_NONE)
+    {
+      Serial.println("SD CARD NOT PRESENT");
+      M5.Display.printf("SD CARD NOT PRESENT\n");
+      return std::make_tuple(false, "", "", "", 0);
+    }
+    if (!SD.exists(CONFIG_FILE))
+    {
+      Serial.println("SD CARD CONFIG FILE NOT EXIST");
+      M5.Display.printf("SD CARD CONFIG FILE NOT EXIST\n");
+      return std::make_tuple(false, "", "", "", 0); // Return false if file does not exist
     }
     // ota設定
     File fp = SD.open(CONFIG_FILE);
@@ -160,6 +173,7 @@ std::tuple<bool, std::string, std::string, std::string, int> get_config()
       char *str;
       bool flag = false;
       Serial.println("file reading");
+      M5.Display.printf("file reading\n");
       while (fp.available())
       {
         data[cnt++] = fp.read();
@@ -188,6 +202,7 @@ std::tuple<bool, std::string, std::string, std::string, int> get_config()
               Serial.printf("pass:%s\n", password.c_str());
               Serial.printf("agent_ip:%s\n", agent_ip.c_str());
               Serial.printf("agent_port:%d\n", agent_port);
+              M5.Display.printf("read config success\n");
               return std::make_tuple(true, ssid, password, agent_ip, agent_port); // Return all as a tuple
             }
           }

@@ -17,7 +17,7 @@ unsigned int ota_progress = 0;
 std::string ota_error = "";
 
 
-std::string hostname = "f11esp32";
+std::string hostname = "MiniM5Robo";
 const IPAddress ip(192, 168, 1, 11);
 const IPAddress gateway(192, 168, 1, 1);
 const IPAddress subnet(255, 255, 255, 0);
