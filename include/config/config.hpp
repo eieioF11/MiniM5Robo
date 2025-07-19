@@ -24,7 +24,6 @@ HardwareSerial &DXL_SERIAL = Serial2;
 HardwareSerial &LIDAR_SERIAL = Serial1;
 
 #define MICROROS_AGENT_PORT 8888
-#define MICROROS_AGENT_IP "10.173.43.160" //"192.168.0.117" // ※ HOST PC IP
 
 #define SD_SPI_CS_PIN 4
 #define SD_SWITCH_PIN 4

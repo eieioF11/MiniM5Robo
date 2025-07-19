@@ -1,2 +1,3 @@
 #define WIFI_SSID "***"
 #define WIFI_PASSWORD "***"
+#define MICROROS_AGENT_IP "***.***.***.***" // ※ HOST PC IP
