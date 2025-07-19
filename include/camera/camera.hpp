@@ -43,6 +43,7 @@ namespace Camera {
     size_t height_  = 240;
     bool visualize_ = true;
     camera_fb_t* fb_;
+    camera_fb_t jpg_fb_;
     bool get_framebuffer_ = false;
     // inline static camera_config_t camera_config = {
     //     .pin_pwdn = 32, // GPIO32
@@ -109,7 +110,22 @@ namespace Camera {
         M5.Display.endWrite();
       }
     }
+    void draw_jpg() {
+      if (visualize_) {
+        M5.Display.drawJpg(jpg_fb_.buf, jpg_fb_.len, 0, 0, width_, height_);
+      }
+    }
     camera_fb_t* getFrameBuffer() { return fb_; }
+    bool calcJpgFrameBuffer(uint8_t quality) {
+      if (get_framebuffer_) {
+        jpg_fb_.width  = width_;
+        jpg_fb_.height = height_;
+        jpg_fb_.format = PIXFORMAT_JPEG;
+        return fmt2jpg(fb_->buf, fb_->len, width_, height_, fb_->format, quality, &jpg_fb_.buf, &jpg_fb_.len);
+      }
+      return false;
+    }
+    camera_fb_t* getJpgFrameBuffer() { return &jpg_fb_; }
     void returnFrameBuffer() {
       if (get_framebuffer_) {
         esp_camera_fb_return(fb_);

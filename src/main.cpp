@@ -87,8 +87,8 @@ void dxl_torque_sub_callback(const void* msgin) {
 bool get_power = false;
 void power_sub_callback(const void* msgin) {
   const std_msgs__msg__Bool* msg = (const std_msgs__msg__Bool*)msgin;
-  power_msg                       = *msg;
-  get_power                       = true;
+  power_msg                      = *msg;
+  get_power                      = true;
 }
 
 void timer_callback(rcl_timer_t* timer, int64_t last_call_time) {
@@ -96,7 +96,7 @@ void timer_callback(rcl_timer_t* timer, int64_t last_call_time) {
   rcl_publish(&imu_pub, &imu_msg, NULL);
   rcl_publish(&odom_pub, &odom_msg, NULL);
   rcl_publish(&laser_scan_pub, &lidar.laser_scan_msg, NULL);
-  // rcl_publish(&image_pub, &image_msg, NULL);
+  rcl_publish(&image_pub, &image_msg, NULL);
 }
 
 bool odom_reset = false;
@@ -182,7 +182,7 @@ void setup() {
   rclc_publisher_init_default(&imu_pub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, Imu), "/imu");
   rclc_publisher_init_default(&laser_scan_pub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, LaserScan), "/scan");
   rclc_publisher_init_default(&odom_pub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "/odom");
-  // rclc_publisher_init_default(&image_pub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, CompressedImage), "/camera/compressed_image");
+  rclc_publisher_init_default(&image_pub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, CompressedImage), "/camera/compressed_image");
   // Subscriber
   rclc_subscription_init_best_effort(&cmd_vel_sub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "/cmd_vel");
   rclc_subscription_init_best_effort(&dxl_torque_sub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool), "/dxl_torque_enable");
@@ -199,12 +199,12 @@ void setup() {
   rclc_executor_add_subscription(&executor, &power_sub, &power_msg, &power_sub_callback, ON_NEW_DATA);
   rclc_executor_add_timer(&executor, &rcl_timer);
   dxl_torque_msg.data = true;
-  power_msg.data = true;
+  power_msg.data      = true;
   // Task
   xTaskCreatePinnedToCore(main_task, "main task", 10000, NULL, 2, NULL, 1);
   xTaskCreatePinnedToCore(control_task, "control task", 4048, NULL, 2, NULL, 0);
   xTaskCreatePinnedToCore(high_rate_sensor_task, "high rate sensor task", 4048, NULL, 2, NULL, 0);
-  // xTaskCreatePinnedToCore(low_rate_sensor_task, "low rate sensor task", 4048, NULL, 2, NULL, 1);
+  xTaskCreatePinnedToCore(low_rate_sensor_task, "low rate sensor task", 4048, NULL, 2, NULL, 1);
   xTaskCreatePinnedToCore(lidar_task, "lidar task", 10000, NULL, 2, NULL, 1);
   xTaskCreatePinnedToCore(odom_task, "odom task", 4048, NULL, 1, NULL, 0);
 
@@ -250,7 +250,7 @@ void main_task(void* arg) {
     // button
     if (M5.BtnA.wasHold()) {
       M5.Display.fillScreen(BLACK);
-      display_mode = last_display_mode;
+      display_mode        = last_display_mode;
       dxl_torque_msg.data = !dxl_torque_msg.data;
       get_dxl_torque      = true;
       M5.Display.startWrite();
@@ -278,7 +278,7 @@ void main_task(void* arg) {
     }
     if (M5.BtnC.wasHold()) {
       M5.Display.fillScreen(BLACK);
-      display_mode = last_display_mode;
+      display_mode   = last_display_mode;
       power_msg.data = !power_msg.data;
       get_power      = true;
       M5.Display.startWrite();
@@ -339,9 +339,7 @@ void main_task(void* arg) {
         break;
       case DisplayMode::CAMERA:
         last_display_mode = display_mode;
-        camera.capture();
-        camera.draw();
-        camera.returnFrameBuffer();
+        camera.draw_jpg();
         break;
       case DisplayMode::LIDAR:
         last_display_mode = display_mode;
@@ -522,45 +520,27 @@ void low_rate_sensor_task(void* arg) {
   conf.rules                                = rules;
   conf.n_rules                              = sizeof(rules) / sizeof(rules[0]);
   micro_ros_utilities_create_message_memory(ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, CompressedImage), &image_msg, conf);
+  uint8_t quality = 12;
   while (1) {
-    // camera.returnFrameBuffer();
-    // camera.capture();
-    // image_msg.header.stamp.sec = (int32_t)time(NULL);
-    // image_msg.header.stamp.nanosec = (uint32_t)(micros() % 1000000);
-    // size_t _jpg_buf_len = 0;
-    // uint8_t *_jpg_buf = NULL;
-    // camera_fb_t *fb = camera.getFrameBuffer();
-    // // camera_fb_t *pic = (camera_fb_t *)malloc(sizeof(camera_fb_t));
-    // if (fb != NULL)
-    // {
-    //   bool jpeg_converted = frame2jpg(fb, 80, &_jpg_buf, &_jpg_buf_len);
-    //   if (jpeg_converted)
-    //   {
-    //     if (_jpg_buf != NULL)
-    //     {
-    //       if (_jpg_buf_len <= image_msg.data.capacity)
-    //       {
-    //         image_msg.data.size = _jpg_buf_len;
-    //         memcpy(image_msg.data.data, _jpg_buf, _jpg_buf_len);
-    //         image_msg.format = micro_ros_string_utilities_set(image_msg.format, "jpeg");
-    //         rcl_publish(&image_pub, &image_msg, NULL);
-    //       }
-    //       // esp_camera_fb_return(pic);
-    //     }
-    //   }
-    //   else
-    //   {
-    //     Serial.println("Failed to convert frame to JPEG");
-    //     M5.Display.println("Failed to convert frame to JPEG");
-    //   }
-    // }
-    // else
-    // {
-    //   Serial.println("No frame buffer available");
-    //   M5.Display.println("No frame buffer available");
-    // }
-    // Read low-rate sensor data
-    vTaskDelay(pdMS_TO_TICKS(100));
+    camera.capture();
+    bool jpeg_converted = camera.calcJpgFrameBuffer(quality);
+    camera_fb_t* jpg_fb = camera.getJpgFrameBuffer();
+    camera.returnFrameBuffer();
+    image_msg.header.stamp.sec     = (int32_t)time(NULL);
+    image_msg.header.stamp.nanosec = (uint32_t)(micros() % 1000000);
+    if (jpeg_converted) {
+      if (jpg_fb->buf != NULL) {
+        if (jpg_fb->len <= image_msg.data.capacity) {
+          image_msg.data.size = jpg_fb->len;
+          memcpy(image_msg.data.data, jpg_fb->buf, jpg_fb->len);
+          image_msg.format = micro_ros_string_utilities_set(image_msg.format, "jpeg");
+        }
+      }
+    } else {
+      Serial.println("Failed to convert frame to JPEG");
+      M5.Display.println("Failed to convert frame to JPEG");
+    }
+    vTaskDelay(pdMS_TO_TICKS(500));
   }
 }
 
