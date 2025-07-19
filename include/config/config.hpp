@@ -2,6 +2,7 @@
 #include "utility/dynamixel_utils.hpp"
 #include <Arduino.h>
 #include <M5Unified.h>
+#include <SD.h>
 #include <array>
 #include <memory>
 #include <optional>

@@ -39,6 +39,7 @@ rcl_publisher_t odom_pub;
 rcl_publisher_t image_pub;
 rcl_subscription_t cmd_vel_sub;
 rcl_subscription_t dxl_torque_sub;
+rcl_subscription_t power_sub;
 rclc_executor_t executor;
 rclc_support_t support;
 rcl_allocator_t allocator;
@@ -50,6 +51,7 @@ sensor_msgs__msg__Imu imu_msg;
 nav_msgs__msg__Odometry odom_msg;
 sensor_msgs__msg__CompressedImage image_msg;
 std_msgs__msg__Bool dxl_torque_msg;
+std_msgs__msg__Bool power_msg;
 
 goblib::UnifiedButton unifiedButton;
 
@@ -80,6 +82,13 @@ void dxl_torque_sub_callback(const void* msgin) {
   const std_msgs__msg__Bool* msg = (const std_msgs__msg__Bool*)msgin;
   dxl_torque_msg                 = *msg;
   get_dxl_torque                 = true;
+}
+
+bool get_power = false;
+void power_sub_callback(const void* msgin) {
+  const std_msgs__msg__Bool* msg = (const std_msgs__msg__Bool*)msgin;
+  power_msg                       = *msg;
+  get_power                       = true;
 }
 
 void timer_callback(rcl_timer_t* timer, int64_t last_call_time) {
@@ -177,6 +186,7 @@ void setup() {
   // Subscriber
   rclc_subscription_init_best_effort(&cmd_vel_sub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "/cmd_vel");
   rclc_subscription_init_best_effort(&dxl_torque_sub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool), "/dxl_torque_enable");
+  rclc_subscription_init_best_effort(&power_sub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool), "/power_enable");
   // Timer
   rclc_timer_init_default(&rcl_timer, &support, RCL_MS_TO_NS(100), timer_callback);
 
@@ -186,8 +196,10 @@ void setup() {
   rclc_executor_init(&executor, &support.context, callback_size, &allocator);
   rclc_executor_add_subscription(&executor, &cmd_vel_sub, &cmd_vel_msg, &cmd_vel_sub_callback, ON_NEW_DATA);
   rclc_executor_add_subscription(&executor, &dxl_torque_sub, &dxl_torque_msg, &dxl_torque_sub_callback, ON_NEW_DATA);
+  rclc_executor_add_subscription(&executor, &power_sub, &power_msg, &power_sub_callback, ON_NEW_DATA);
   rclc_executor_add_timer(&executor, &rcl_timer);
   dxl_torque_msg.data = true;
+  power_msg.data = true;
   // Task
   xTaskCreatePinnedToCore(main_task, "main task", 10000, NULL, 2, NULL, 1);
   xTaskCreatePinnedToCore(control_task, "control task", 4048, NULL, 2, NULL, 0);
@@ -238,6 +250,7 @@ void main_task(void* arg) {
     // button
     if (M5.BtnA.wasHold()) {
       M5.Display.fillScreen(BLACK);
+      display_mode = last_display_mode;
       dxl_torque_msg.data = !dxl_torque_msg.data;
       get_dxl_torque      = true;
       M5.Display.startWrite();
@@ -264,11 +277,15 @@ void main_task(void* arg) {
       M5.Display.fillScreen(BLACK);
     }
     if (M5.BtnC.wasHold()) {
-      ota_started    = true;
-      ota_start_flag = false;
-      display_mode   = DisplayMode::OTA;
-      avatar.suspend();
       M5.Display.fillScreen(BLACK);
+      display_mode = last_display_mode;
+      power_msg.data = !power_msg.data;
+      get_power      = true;
+      M5.Display.startWrite();
+      M5.Display.setCursor(0, 0);
+      M5.Display.printf("Power %s\n", power_msg.data ? "ON" : "OFF");
+      M5.Display.endWrite();
+      vTaskDelay(pdMS_TO_TICKS(1000));
     } else if (M5.BtnC.wasReleased()) {
       sift_display_mode(true);
       if (display_mode != DisplayMode::AVATAR) {
@@ -313,6 +330,7 @@ void main_task(void* arg) {
         M5.Display.printf("ip:%s\n", WiFi.localIP().toString().c_str());
         M5.Display.printf("Battery: %d%% Chg %d\n", M5.Power.getBatteryLevel(), M5.Power.isCharging());
         M5.Display.printf("dxl torque: %s\n", dxl_torque_msg.data ? "ON" : "OFF");
+        M5.Display.printf("Power %s\n", power_msg.data ? "ON" : "OFF");
         M5.Display.printf("v:%.2f, w:%.2f\n", cmd_vel_msg.linear.x, cmd_vel_msg.angular.z);
         M5.Display.printf("x:%.2f, y:%.2f, yaw:%.2f\n", odom_msg.pose.pose.position.x, odom_msg.pose.pose.position.y, odom_yaw);
         M5.Display.printf("r:%.2f, p:%.2f, y:%.2f\n", deg_rpy.roll, deg_rpy.pitch, deg_rpy.yaw);
@@ -334,6 +352,12 @@ void main_task(void* arg) {
         break;
     }
     unifiedButton.draw(true);
+    // power control
+    if (get_power) {
+      M5.Power.setExtOutput(power_msg.data);
+      get_power = false;
+      Serial.printf("Power %s\n", power_msg.data ? "ON" : "OFF");
+    }
     vTaskDelay(pdMS_TO_TICKS(20));
   }
 }
