@@ -558,6 +558,6 @@ void lidar_task(void *arg)
     lidar.laser_scan_msg.header.stamp.nanosec = (uint32_t)(micros() % 1000000);
     // float t = (float)(micros() - s_timer) / 1000000;
     // Serial.printf("Lidar update time: %.3f ms\n", t * 1000);
-    vTaskDelay(pdMS_TO_TICKS(20));
+    vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
