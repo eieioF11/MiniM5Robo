@@ -23,7 +23,7 @@ namespace kinematics {
 
   public:
     MoveBase() {}
-    MoveBase(value_type r, value_type l,value_type w,value_type h) : R(r), L(l), WIDTH(w), HEIGHT(h) {}
+    MoveBase(value_type r, value_type l, value_type w, value_type h) : R(r), L(l), WIDTH(w), HEIGHT(h) {}
 
     /**
      * @brief 3次元の速度入力

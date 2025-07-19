@@ -12,8 +12,7 @@
 #define M_PI 3.1415926535897932384626433832795
 #endif
 
-namespace common_utils
-{
+namespace common_utils {
 
   /**
    * @brief 数学・物理定数
@@ -25,9 +24,9 @@ namespace common_utils
     // rpm -> rps
     constexpr float RPM_TO_RPS = 1.0 / 60.0;
     // rpm -> m/s
-    constexpr float RPM_TO_MPS = TWO_PI/60.0;
+    constexpr float RPM_TO_MPS = TWO_PI / 60.0;
     // m/s -> rpm
-    constexpr float MPS_TO_RPM = 60.0/TWO_PI;
+    constexpr float MPS_TO_RPM = 60.0 / TWO_PI;
     // rps -> rad/s
     constexpr float RPS_TO_RADPS = TWO_PI;
     // rad/s -> rps
@@ -70,8 +69,7 @@ namespace common_utils
    * @return false
    */
   template <typename T>
-  static constexpr bool in_range_open(T x, T min, T max)
-  {
+  static constexpr bool in_range_open(T x, T min, T max) {
     return ((min < x && x < max) ? true : false);
   }
 
@@ -86,8 +84,7 @@ namespace common_utils
    * @return false
    */
   template <typename T>
-  static constexpr bool in_range(T x, T min, T max)
-  {
+  static constexpr bool in_range(T x, T min, T max) {
     return ((min <= x && x <= max) ? true : false);
   }
 
@@ -103,8 +100,7 @@ namespace common_utils
    * @return constexpr T
    */
   template <typename T>
-  constexpr inline T transform_range(T x, T in_min, T in_max, T out_min, T out_max)
-  {
+  constexpr inline T transform_range(T x, T in_min, T in_max, T out_min, T out_max) {
     return (x - in_min) * (out_max - out_min) / (in_max - in_min) + out_min;
   }
 
@@ -116,8 +112,7 @@ namespace common_utils
    * @return constexpr T
    */
   template <class T>
-  constexpr inline T sign(T x)
-  {
+  constexpr inline T sign(T x) {
     return (x > 0) - (x < 0);
   }
 
@@ -129,8 +124,7 @@ namespace common_utils
    * @return constexpr T
    */
   template <class T>
-  constexpr inline T sgn(T x)
-  {
+  constexpr inline T sgn(T x) {
     return sign<T>(x);
   }
 
@@ -140,12 +134,10 @@ namespace common_utils
    * @param angle
    * @return float
    */
-  static inline float normalize_angle(float angle)
-  {
+  static inline float normalize_angle(float angle) {
 
     float a = std::fmod(angle + PI, TWO_PI) - PI;
-    if (a < -PI)
-      a += TWO_PI;
+    if (a < -PI) a += TWO_PI;
     return a;
   }
 
@@ -172,8 +164,7 @@ namespace common_utils
    * @return constexpr T
    */
   template <class T>
-  constexpr inline T get_average(std::vector<T> num_list)
-  {
+  constexpr inline T get_average(std::vector<T> num_list) {
     T average = std::accumulate(num_list.begin(), num_list.end(), 0.0) / num_list.size();
     return average;
   }
@@ -187,8 +178,7 @@ namespace common_utils
    * @return constexpr AFTER_VECTOR
    */
   template <class BEFORE_VECTOR, class AFTER_VECTOR>
-  constexpr inline AFTER_VECTOR conversion_vector2(BEFORE_VECTOR in_v)
-  {
+  constexpr inline AFTER_VECTOR conversion_vector2(BEFORE_VECTOR in_v) {
     AFTER_VECTOR out_v;
     out_v.x = in_v.x;
     out_v.y = in_v.y;
@@ -202,8 +192,7 @@ namespace common_utils
    * @return constexpr AFTER_VECTOR
    */
   template <class BEFORE_VECTOR, class AFTER_VECTOR>
-  constexpr inline AFTER_VECTOR conversion_vector3(BEFORE_VECTOR in_v)
-  {
+  constexpr inline AFTER_VECTOR conversion_vector3(BEFORE_VECTOR in_v) {
     AFTER_VECTOR out_v;
     out_v.x = in_v.x;
     out_v.y = in_v.y;
@@ -219,8 +208,7 @@ namespace common_utils
    * @return constexpr float
    */
   template <class POINT>
-  constexpr inline float length(const POINT &v)
-  {
+  constexpr inline float length(const POINT& v) {
     return std::hypot(v.x, v.y);
   }
 
@@ -231,8 +219,7 @@ namespace common_utils
    * @return constexpr float
    */
   template <class POINT>
-  constexpr inline float length_3d(const POINT &v)
-  {
+  constexpr inline float length_3d(const POINT& v) {
     return std::hypot(v.x, v.y, v.z);
   }
 
@@ -245,8 +232,7 @@ namespace common_utils
    * @return constexpr float
    */
   template <class POINT>
-  constexpr inline float distance(const POINT &a, const POINT &b)
-  {
+  constexpr inline float distance(const POINT& a, const POINT& b) {
     return std::hypot(a.x - b.x, a.y - b.y);
   }
 
@@ -258,8 +244,7 @@ namespace common_utils
    * @return constexpr float
    */
   template <class POINT>
-  constexpr inline float distance_3d(const POINT &a, const POINT &b)
-  {
+  constexpr inline float distance_3d(const POINT& a, const POINT& b) {
     return std::hypot(a.x - b.x, a.y - b.y, a.z - b.z);
   }
 
@@ -272,8 +257,7 @@ namespace common_utils
    * @return constexpr float
    */
   template <class POINT>
-  constexpr inline float dot(const POINT &a, const POINT &b)
-  {
+  constexpr inline float dot(const POINT& a, const POINT& b) {
     return a.x * b.x + a.y * b.y;
   }
 
@@ -285,8 +269,7 @@ namespace common_utils
    * @return constexpr float
    */
   template <class POINT>
-  constexpr inline float dot_3d(const POINT &a, const POINT &b)
-  {
+  constexpr inline float dot_3d(const POINT& a, const POINT& b) {
     return a.x * b.x + a.y * b.y + a.z * b.z;
   }
 
@@ -299,12 +282,11 @@ namespace common_utils
    * @return constexpr POINT
    */
   template <class POINT>
-  constexpr inline POINT rotation(const POINT &in, float theta)
-  {
+  constexpr inline POINT rotation(const POINT& in, float theta) {
     POINT out;
     out.x = in.x * std::cos(theta) - in.y * std::sin(theta);
     out.y = in.x * std::sin(theta) + in.y * std::cos(theta);
     return out;
   }
 
-} // namespace common_lib
+} // namespace common_utils
