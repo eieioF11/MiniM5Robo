@@ -187,12 +187,12 @@ void setup()
   rclc_executor_add_timer(&executor, &rcl_timer);
 
   // Task
-  xTaskCreatePinnedToCore(main_task, "main task", 10000, NULL, 3, NULL, 1);
-  xTaskCreatePinnedToCore(control_task, "control task", 4048, NULL, 3, NULL, 0);
+  xTaskCreatePinnedToCore(main_task, "main task", 10000, NULL, 2, NULL, 1);
+  xTaskCreatePinnedToCore(control_task, "control task", 4048, NULL, 2, NULL, 0);
   xTaskCreatePinnedToCore(high_rate_sensor_task, "high rate sensor task", 4048, NULL, 2, NULL, 0);
   // xTaskCreatePinnedToCore(low_rate_sensor_task, "low rate sensor task", 4048, NULL, 2, NULL, 1);
   xTaskCreatePinnedToCore(lidar_task, "lidar task", 10000, NULL, 2, NULL, 1);
-  xTaskCreatePinnedToCore(odom_task, "odom task", 4048, NULL, 2, NULL, 0);
+  xTaskCreatePinnedToCore(odom_task, "odom task", 4048, NULL, 1, NULL, 0);
 
   avatar.setBatteryIcon(true);
   avatar.init();
@@ -551,13 +551,10 @@ void lidar_task(void *arg)
   lidar.begin(LIDAR_RX, LIDAR_TX, "laser_frame");
   while (1)
   {
-    // uint32_t s_timer = micros();
     while (lidar.update())
       ;
     lidar.laser_scan_msg.header.stamp.sec = (int32_t)time(NULL);
     lidar.laser_scan_msg.header.stamp.nanosec = (uint32_t)(micros() % 1000000);
-    // float t = (float)(micros() - s_timer) / 1000000;
-    // Serial.printf("Lidar update time: %.3f ms\n", t * 1000);
     vTaskDelay(pdMS_TO_TICKS(1));
   }
 }
