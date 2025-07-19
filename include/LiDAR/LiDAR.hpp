@@ -238,6 +238,7 @@ namespace LiDAR
           counter_ = 0;
           state_ = STATE_WAIT_HEADER;
           rotation_speed_ = packet->rotation_speed;
+          return false;
         }
         return true;
       }

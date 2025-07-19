@@ -62,7 +62,8 @@ bool dynamixel_init = false;
 void main_task(void *arg);
 void control_task(void *arg);
 void odom_task(void *arg);
-void sensor_task(void *arg);
+void high_rate_sensor_task(void *arg);
+void low_rate_sensor_task(void *arg);
 void lidar_task(void *arg);
 
 // callback function
@@ -110,9 +111,19 @@ void setup()
   auto btnC = unifiedButton.getButtonC();
   assert(btnC);
   btnC->initButtonUL(unifiedButton.gfx(), left + w * 2, top, w, h, TFT_DARKGRAY, TFT_BLACK, TFT_DARKGRAY, ">");
+  // setup aw9523 [todo]
+  // M5.Display.printf("aw9523 Init\n");
+  // aw9523_begin();
+  // M5.Display.printf("SD card %d\n", sd_exist());
   // setup ota
+  M5.Display.printf("Setup OTA\n");
+  // const auto [success, ssid, password, cfg_agent_ip, cfg_agent_port] = std::make_tuple(false, std::string(""), std::string(""), std::string(""), 0);
+  const auto [success, ssid, password, cfg_agent_ip, cfg_agent_port] = get_config();
   // setupOTA();
-  setupOTA(WIFI_SSID, WIFI_PASSWORD);
+  if (success)
+    setupOTA(ssid.c_str(), password.c_str());
+  else
+    setupOTA(WIFI_SSID, WIFI_PASSWORD);
 
   M5.Display.setCursor(0, 0);
   M5.Display.printf("Connecting to WiFi...\n");
@@ -123,8 +134,19 @@ void setup()
   M5.Display.printf("ip:%s\n", WiFi.localIP().toString().c_str());
   // set_microros_serial_transports(Serial);
   IPAddress agent_ip;
-  agent_ip.fromString(MICROROS_AGENT_IP);
-  uint16_t agent_port = MICROROS_AGENT_PORT;
+  int16_t agent_port = MICROROS_AGENT_PORT;
+  if (success)
+  {
+    M5.Display.printf("Using config file\n");
+    agent_ip.fromString(cfg_agent_ip.c_str());
+    agent_port = cfg_agent_port;
+  }
+  else
+  {
+    M5.Display.printf("Using default agent IP and port\n");
+    agent_ip.fromString(MICROROS_AGENT_IP);
+    agent_port = MICROROS_AGENT_PORT;
+  }
   set_microros_wifi_transports(agent_ip, agent_port);
   // set_microros_wifi_transports(MICROROS_WIFI_SSID, MICROROS_WIFI_PASSWORD, agent_ip, agent_port);
   delay(2000);
@@ -155,7 +177,7 @@ void setup()
       "/cmd_vel");
 
   // Timer
-  rclc_timer_init_default(&rcl_timer, &support, RCL_MS_TO_NS(150), timer_callback);
+  rclc_timer_init_default(&rcl_timer, &support, RCL_MS_TO_NS(100), timer_callback);
 
   // Executor
   int callback_size = 2;
@@ -165,11 +187,12 @@ void setup()
   rclc_executor_add_timer(&executor, &rcl_timer);
 
   // Task
-  xTaskCreatePinnedToCore(main_task, "main task", 10000, NULL, 10, NULL, 1);
-  xTaskCreatePinnedToCore(control_task, "control task", 4048, NULL, 5, NULL, 0);
-  xTaskCreatePinnedToCore(sensor_task, "sensor task", 4048, NULL, 3, NULL, 1);
-  xTaskCreatePinnedToCore(lidar_task, "lidar task", 10000, NULL, 5, NULL, 0);
-  xTaskCreatePinnedToCore(odom_task, "odom task", 4048, NULL, 4, NULL, 0);
+  xTaskCreatePinnedToCore(main_task, "main task", 10000, NULL, 3, NULL, 1);
+  xTaskCreatePinnedToCore(control_task, "control task", 4048, NULL, 3, NULL, 0);
+  xTaskCreatePinnedToCore(high_rate_sensor_task, "high rate sensor task", 4048, NULL, 2, NULL, 0);
+  // xTaskCreatePinnedToCore(low_rate_sensor_task, "low rate sensor task", 4048, NULL, 2, NULL, 1);
+  xTaskCreatePinnedToCore(lidar_task, "lidar task", 10000, NULL, 2, NULL, 1);
+  xTaskCreatePinnedToCore(odom_task, "odom task", 4048, NULL, 2, NULL, 0);
 
   avatar.setBatteryIcon(true);
   avatar.init();
@@ -190,7 +213,7 @@ void main_task(void *arg)
   common_utils::rpy_t deg_rpy;
   while (true)
   {
-    M5.update();
+    // M5.update();
     unifiedButton.update();
     // reset
     if (reset_flag)
@@ -309,10 +332,12 @@ void main_task(void *arg)
       break;
     }
     unifiedButton.draw(true);
-    vTaskDelay(pdMS_TO_TICKS(40));
+    vTaskDelay(pdMS_TO_TICKS(20));
   }
 }
 
+float l_rpm = 0.0f;
+float r_rpm = 0.0f;
 void control_task(void *arg)
 {
   move_ = std::make_shared<kinematics::TwoWheelsf>(WHEEL_RADIUS, WHEEL_D);
@@ -339,7 +364,9 @@ void control_task(void *arg)
     auto wheel_speeds = move_->get_wheel_speeds();
     m_lw.move(wheel_speeds[0] * common_utils::constants::RPS_TO_RPM);
     m_rw.move(wheel_speeds[1] * common_utils::constants::RPS_TO_RPM);
-    vTaskDelay(pdMS_TO_TICKS(40));
+    l_rpm = m_lw.get_velocity();
+    r_rpm = m_rw.get_velocity();
+    vTaskDelay(pdMS_TO_TICKS(20));
   }
 }
 
@@ -370,8 +397,6 @@ void odom_task(void *arg)
       odom_yaw = 0.0;
       odom_reset = true;
     }
-    float l_rpm = m_lw.get_velocity();
-    float r_rpm = m_rw.get_velocity();
     float w_l = l_rpm * RPM_TO_RADPS;
     float w_r = r_rpm * RPM_TO_RADPS;
     float vx = HALF_WHEEL_R * (w_l + w_r);
@@ -388,39 +413,21 @@ void odom_task(void *arg)
     odom_msg.pose.pose.orientation.w = cos(odom_yaw / 2.0);
     odom_msg.twist.twist.linear.x = vx;
     odom_msg.twist.twist.angular.z = angular;
-    vTaskDelay(pdMS_TO_TICKS(40));
+    vTaskDelay(pdMS_TO_TICKS(20));
   }
 }
 
 float sensor_dt = 0.;
-void sensor_task(void *arg)
+void high_rate_sensor_task(void *arg)
 {
   using namespace common_utils;
   uint32_t sensor_timer = micros();
   imu_msg.header.frame_id = micro_ros_string_utilities_set(imu_msg.header.frame_id, "imu_frame");
-
-  image_msg.header.frame_id = micro_ros_string_utilities_set(image_msg.header.frame_id, "rgb_frame");
-  static micro_ros_utilities_memory_conf_t conf = {};
-  // OPTIONALLY this struct can configure the default size of strings, basic sequences and composed sequences
-  conf.max_string_capacity = 50;
-  conf.max_ros2_type_sequence_capacity = 5;
-  conf.max_basic_type_sequence_capacity = 5;
-  // OPTIONALLY this struct can store rules for specific members
-  // !! Using the API with rules will use dynamic memory allocations for handling strings !!
-  micro_ros_utilities_memory_rule_t rules[] = {
-      {"header.frame_id", 30},
-      {"format", 4},
-      {"data", 20000}};
-  conf.rules = rules;
-  conf.n_rules = sizeof(rules) / sizeof(rules[0]);
-  micro_ros_utilities_create_message_memory(
-      ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, CompressedImage),
-      &image_msg,
-      conf);
   Madgwick filter;
   std::shared_ptr<Madgwick> filter_ptr = std::make_shared<Madgwick>(filter);
   while (1)
   {
+    M5.update();
     sensor_dt = (float)(micros() - sensor_timer) / 1000000; // Calculate delta time
     sensor_timer = micros();
     if (claib_flag)
@@ -471,6 +478,32 @@ void sensor_task(void *arg)
     imu_msg.orientation.y = q.y;
     imu_msg.orientation.z = q.z;
     imu_msg.orientation.w = q.w;
+    vTaskDelay(pdMS_TO_TICKS(10));
+  }
+}
+
+void low_rate_sensor_task(void *arg)
+{
+  image_msg.header.frame_id = micro_ros_string_utilities_set(image_msg.header.frame_id, "rgb_frame");
+  static micro_ros_utilities_memory_conf_t conf = {};
+  // OPTIONALLY this struct can configure the default size of strings, basic sequences and composed sequences
+  conf.max_string_capacity = 50;
+  conf.max_ros2_type_sequence_capacity = 5;
+  conf.max_basic_type_sequence_capacity = 5;
+  // OPTIONALLY this struct can store rules for specific members
+  // !! Using the API with rules will use dynamic memory allocations for handling strings !!
+  micro_ros_utilities_memory_rule_t rules[] = {
+      {"header.frame_id", 30},
+      {"format", 4},
+      {"data", 20000}};
+  conf.rules = rules;
+  conf.n_rules = sizeof(rules) / sizeof(rules[0]);
+  micro_ros_utilities_create_message_memory(
+      ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, CompressedImage),
+      &image_msg,
+      conf);
+  while (1)
+  {
     // camera.returnFrameBuffer();
     // camera.capture();
     // image_msg.header.stamp.sec = (int32_t)time(NULL);
@@ -491,6 +524,7 @@ void sensor_task(void *arg)
     //         image_msg.data.size = _jpg_buf_len;
     //         memcpy(image_msg.data.data, _jpg_buf, _jpg_buf_len);
     //         image_msg.format = micro_ros_string_utilities_set(image_msg.format, "jpeg");
+    //         rcl_publish(&image_pub, &image_msg, NULL);
     //       }
     //       // esp_camera_fb_return(pic);
     //     }
@@ -506,7 +540,8 @@ void sensor_task(void *arg)
     //   Serial.println("No frame buffer available");
     //   M5.Display.println("No frame buffer available");
     // }
-    vTaskDelay(pdMS_TO_TICKS(40));
+    // Read low-rate sensor data
+    vTaskDelay(pdMS_TO_TICKS(100));
   }
 }
 
@@ -516,9 +551,13 @@ void lidar_task(void *arg)
   lidar.begin(LIDAR_RX, LIDAR_TX, "laser_frame");
   while (1)
   {
-    lidar.update();
+    // uint32_t s_timer = micros();
+    while (lidar.update())
+      ;
     lidar.laser_scan_msg.header.stamp.sec = (int32_t)time(NULL);
     lidar.laser_scan_msg.header.stamp.nanosec = (uint32_t)(micros() % 1000000);
-    vTaskDelay(pdMS_TO_TICKS(40));
+    // float t = (float)(micros() - s_timer) / 1000000;
+    // Serial.printf("Lidar update time: %.3f ms\n", t * 1000);
+    vTaskDelay(pdMS_TO_TICKS(20));
   }
 }
