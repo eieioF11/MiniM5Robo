@@ -191,7 +191,7 @@ void setup() {
   rclc_timer_init_default(&rcl_timer, &support, RCL_MS_TO_NS(100), timer_callback);
 
   // Executor
-  int callback_size = 2;
+  int callback_size = 4;
   executor          = rclc_executor_get_zero_initialized_executor();
   rclc_executor_init(&executor, &support.context, callback_size, &allocator);
   rclc_executor_add_subscription(&executor, &cmd_vel_sub, &cmd_vel_msg, &cmd_vel_sub_callback, ON_NEW_DATA);
@@ -345,7 +345,7 @@ void main_task(void* arg) {
         break;
       case DisplayMode::LIDAR:
         last_display_mode = display_mode;
-        M5.Display.fillScreen(BLACK);
+        // M5.Display.fillScreen(BLACK);
         lidar.draw_pointcloud();
         break;
       default:
