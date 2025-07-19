@@ -84,6 +84,7 @@ void timer_callback(rcl_timer_t *timer, int64_t last_call_time)
 
 bool odom_reset = false;
 bool imu_reset = false;
+bool dxl_reset = false;
 
 void setup()
 {
@@ -219,7 +220,7 @@ void main_task(void *arg)
     if (reset_flag)
     {
       M5.Display.fillScreen(BLACK);
-      if (odom_reset && imu_reset)
+      if (odom_reset && imu_reset && dxl_reset)
       {
         display_mode = last_display_mode;
         M5.Display.setCursor(0, 0);
@@ -227,6 +228,7 @@ void main_task(void *arg)
         reset_flag = false;
         odom_reset = false;
         imu_reset = false;
+        dxl_reset = false;
         avater_started = false;
         vTaskDelay(pdMS_TO_TICKS(100));
       }
@@ -360,6 +362,14 @@ void control_task(void *arg)
   dynamixel_init = true;
   while (true)
   {
+    if (reset_flag)
+    {
+      Serial.printf("Dynamixel reset\n");
+      m_lw.begin(false, false);
+      m_rw.begin(true, false);
+      dxl_reset = true;
+      vTaskDelay(pdMS_TO_TICKS(10));
+    }
     move_->move(cmd_vel_msg.linear.x, 0.0, cmd_vel_msg.angular.z);
     auto wheel_speeds = move_->get_wheel_speeds();
     m_lw.move(wheel_speeds[0] * common_utils::constants::RPS_TO_RPM);
