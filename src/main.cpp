@@ -1,10 +1,10 @@
+#include "LTR553Als/LTR553Als.hpp"
 #include "LiDAR/LiDAR.hpp"
 #include "config/config.hpp"
 #include "config/wifi_info.hpp"
 #include "utility/dynamixel_utils.hpp"
 #include "utility/imu_util.hpp"
 #include "utility/math_util.hpp"
-#include "LTR553Als/LTR553Als.hpp"
 #include <Arduino.h>
 #include <M5Unified.h>
 #include <MadgwickAHRS.h>
@@ -21,8 +21,8 @@
 #include <sensor_msgs/msg/imu.h>
 #include <sensor_msgs/msg/laser_scan.h>
 #include <std_msgs/msg/bool.h>
+#include <std_msgs/msg/u_int16.h>
 #include <time.h>
-// #include <sensor_msgs/msg/image.h>
 #include <micro_ros_utilities/string_utilities.h>
 #include <micro_ros_utilities/type_utilities.h>
 #include <nav_msgs/msg/odometry.h>
@@ -38,6 +38,7 @@ rcl_publisher_t imu_pub;
 rcl_publisher_t laser_scan_pub;
 rcl_publisher_t odom_pub;
 rcl_publisher_t image_pub;
+rcl_publisher_t als_ps_pub;
 rcl_subscription_t cmd_vel_sub;
 rcl_subscription_t dxl_torque_sub;
 rcl_subscription_t power_sub;
@@ -53,6 +54,7 @@ nav_msgs__msg__Odometry odom_msg;
 sensor_msgs__msg__CompressedImage image_msg;
 std_msgs__msg__Bool dxl_torque_msg;
 std_msgs__msg__Bool power_msg;
+std_msgs__msg__UInt16 als_ps_msg;
 
 goblib::UnifiedButton unifiedButton;
 
@@ -98,6 +100,7 @@ void timer_callback(rcl_timer_t* timer, int64_t last_call_time) {
   rcl_publish(&odom_pub, &odom_msg, NULL);
   rcl_publish(&laser_scan_pub, &lidar.laser_scan_msg, NULL);
   rcl_publish(&image_pub, &image_msg, NULL);
+  rcl_publish(&als_ps_pub, &als_ps_msg, NULL);
 }
 
 bool odom_reset = false;
@@ -179,6 +182,7 @@ void setup() {
   rclc_publisher_init_default(&laser_scan_pub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, LaserScan), "/scan");
   rclc_publisher_init_default(&odom_pub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(nav_msgs, msg, Odometry), "/odom");
   rclc_publisher_init_default(&image_pub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, CompressedImage), "/camera/compressed_image");
+  rclc_publisher_init_default(&als_ps_pub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, UInt16), "/als_ps");
   // Subscriber
   rclc_subscription_init_best_effort(&cmd_vel_sub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(geometry_msgs, msg, Twist), "/cmd_vel");
   rclc_subscription_init_best_effort(&dxl_torque_sub, &node, ROSIDL_GET_MSG_TYPE_SUPPORT(std_msgs, msg, Bool), "/dxl_torque_enable");
@@ -296,7 +300,7 @@ void main_task(void* arg) {
       M5.Speaker.tone(1000, 50);
     }
     // display
-    auto [als_ch0, als_ch1, ps_value] = ltr553als.getValues();
+    auto [als_ch0, als_ch1, ps_value, lux] = ltr553als.getValues();
     switch (display_mode) {
       case DisplayMode::AVATAR:
         if (!avater_started) {
@@ -336,7 +340,13 @@ void main_task(void* arg) {
         M5.Display.printf("v:%.2f, w:%.2f\n", cmd_vel_msg.linear.x, cmd_vel_msg.angular.z);
         M5.Display.printf("x:%.2f, y:%.2f, yaw:%.2f\n", odom_msg.pose.pose.position.x, odom_msg.pose.pose.position.y, odom_yaw);
         M5.Display.printf("r:%.2f, p:%.2f, y:%.2f\n", deg_rpy.roll, deg_rpy.pitch, deg_rpy.yaw);
-        M5.Display.printf("ALS CH0: %d, CH1: %d, PS: %d\n", als_ch0, als_ch1, ps_value);
+        M5.Display.printf("ALS CH0: %d, CH1: %d\n", als_ch0, als_ch1);
+        M5.Display.printf("ALS PS: %d, Lux: %.2f\n", ps_value, lux);
+        if (ps_value > 600) {
+          M5.Speaker.tone(ps_value, 10);
+        }
+        else
+          M5.Speaker.stop();
         M5.Display.endWrite();
         last_display_mode = display_mode;
         break;
@@ -456,7 +466,8 @@ void high_rate_sensor_task(float dt, std::shared_ptr<Madgwick> filter_ptr) {
   // High rate sensor task
   // Proximity sensor
   ltr553als.update();
-  // auto [als_ch0, als_ch1, ps_value] = ltr553als.getValues();
+  auto [als_ch0, als_ch1, ps_value, lux] = ltr553als.getValues();
+  als_ps_msg.data = ps_value;
   // IMU
   float raw_ax, raw_ay, raw_az;
   float raw_gx, raw_gy, raw_gz;
