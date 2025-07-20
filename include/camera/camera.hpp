@@ -23,7 +23,8 @@ namespace Camera {
       .pin_href  = 38,
       .pin_pclk  = 45,
 
-      .xclk_freq_hz = 20000000,
+      .xclk_freq_hz = 10000000,
+      // .xclk_freq_hz = 20000000,
       .ledc_timer   = LEDC_TIMER_0,
       .ledc_channel = LEDC_CHANNEL_0,
 
@@ -45,32 +46,6 @@ namespace Camera {
     camera_fb_t* fb_;
     camera_fb_t jpg_fb_;
     bool get_framebuffer_ = false;
-    // inline static camera_config_t camera_config = {
-    //     .pin_pwdn = 32, // GPIO32
-    //     .pin_reset = -1,
-    //     .pin_xclk = 0,      // GPIO0
-    //     .pin_sscb_sda = 26, // GPIO26
-    //     .pin_sscb_scl = 27, // GPIO27
-    //     .pin_d7 = 35,       // GPIO35
-    //     .pin_d6 = 34,       // GPIO34
-    //     .pin_d5 = 39,       // GPIO39
-    //     .pin_d4 = 36,       // GPIO36
-    //     .pin_d3 = 21,       // GPIO21
-    //     .pin_d2 = 19,       // GPIO19
-    //     .pin_d1 = 18,       // GPIO18
-    //     .pin_d0 = 5,        // GPIO5
-    //     .pin_vsync = 25,    // GPIO25
-    //     .pin_href = 23,     // GPIO23
-    //     .pin_pclk = 22,     // GPIO22
-
-    //     .xclk_freq_hz = 20000000,
-    //     .ledc_timer = LEDC_TIMER_0,
-    //     .ledc_channel = LEDC_CHANNEL_0,
-    //     .pixel_format = PIXFORMAT_JPEG,
-    //     .frame_size = FRAMESIZE_QVGA,
-    //     .jpeg_quality = 12,
-    //     .fb_count = 2,
-    // };
 
   public:
     GC0308() {}
@@ -79,7 +54,6 @@ namespace Camera {
       // initialize the camera
       M5.In_I2C.release();
       esp_err_t err = esp_camera_init(&camera_config);
-      // M5.In_I2C.begin();
       if (err != ESP_OK) {
         Serial.println("Camera Init Failed");
         M5.Display.println("Camera Init Failed");
@@ -91,7 +65,6 @@ namespace Camera {
       // acquire a frame
       M5.In_I2C.release();
       fb_ = esp_camera_fb_get();
-      // M5.In_I2C.begin();
       if (!fb_) {
         Serial.println("Camera Capture Failed");
         M5.Display.println("Camera Capture Failed");
@@ -103,7 +76,12 @@ namespace Camera {
     size_t width() const { return width_; }
     size_t height() const { return height_; }
     void draw() {
-      if (visualize_) {
+      if (visualize_ && fb_ != NULL) {
+        if (fb_->buf == NULL) {
+          Serial.println("Camera Buffer is NULL");
+          M5.Display.println("Camera Buffer is NULL");
+          return;
+        }
         M5.Display.startWrite();
         M5.Display.setAddrWindow(0, 0, width_, height_);
         M5.Display.writePixels((uint16_t*)fb_->buf, int(fb_->len / 2));
@@ -111,7 +89,7 @@ namespace Camera {
       }
     }
     void draw_jpg() {
-      if (visualize_) {
+      if (visualize_ && jpg_fb_.buf != NULL) {
         M5.Display.drawJpg(jpg_fb_.buf, jpg_fb_.len, 0, 0, width_, height_);
       }
     }
@@ -130,6 +108,13 @@ namespace Camera {
       if (get_framebuffer_) {
         esp_camera_fb_return(fb_);
         get_framebuffer_ = false;
+      }
+    }
+    void returnJpgFrameBuffer() {
+      if (jpg_fb_.buf != NULL) {
+        free(jpg_fb_.buf);
+        jpg_fb_.buf = NULL;
+        jpg_fb_.len = 0;
       }
     }
   };

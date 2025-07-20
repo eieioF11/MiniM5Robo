@@ -4,6 +4,7 @@
 #include "utility/dynamixel_utils.hpp"
 #include "utility/imu_util.hpp"
 #include "utility/math_util.hpp"
+#include "LTR553Als/LTR553Als.hpp"
 #include <Arduino.h>
 #include <M5Unified.h>
 #include <MadgwickAHRS.h>
@@ -62,13 +63,13 @@ float ax, ay, az;
 
 LiDAR::VI4300 lidar(LIDAR_SERIAL);
 Camera::GC0308 camera;
+proximity_sensor::LTR553Als ltr553als;
 
 bool dynamixel_init = false;
 void main_task(void* arg);
 void control_task(void* arg);
 void odom_task(void* arg);
-void high_rate_sensor_task(void* arg);
-void low_rate_sensor_task(void* arg);
+void sensor_task(void* arg);
 void lidar_task(void* arg);
 
 // callback function
@@ -129,13 +130,11 @@ void setup() {
   assert(btnC);
   btnC->initButtonUL(unifiedButton.gfx(), left + w * 2, top, w, h, TFT_DARKGRAY, TFT_BLACK, TFT_DARKGRAY, ">");
   // setup aw9523 [todo]
-  // M5.Display.printf("aw9523 Init\n");
-  // aw9523_begin();
-  // M5.Display.printf("SD card %d\n", sd_exist());
+  M5.Display.printf("aw9523 Init\n");
+  aw9523_begin();
+  M5.Display.printf("SD card %d\n", sd_exist());
   // setup ota
   M5.Display.printf("Setup OTA\n");
-  // const auto [success, ssid, password, cfg_agent_ip, cfg_agent_port] = std::make_tuple(false, std::string(""), std::string(""), std::string(""),
-  // 0);
   const auto [success, ssid, password, cfg_agent_ip, cfg_agent_port] = get_config();
   // setupOTA();
   if (success)
@@ -143,7 +142,6 @@ void setup() {
   else
     setupOTA(WIFI_SSID, WIFI_PASSWORD);
 
-  M5.Display.setCursor(0, 0);
   M5.Display.printf("Connecting to WiFi...\n");
   while (WiFi.status() != WL_CONNECTED) {
     delay(500);
@@ -164,8 +162,6 @@ void setup() {
   set_microros_wifi_transports(agent_ip, agent_port);
   // set_microros_wifi_transports(MICROROS_WIFI_SSID, MICROROS_WIFI_PASSWORD, agent_ip, agent_port);
   delay(2000);
-  M5.Display.fillScreen(BLACK);
-  M5.Display.setCursor(0, 0);
   M5.Display.printf("Time set\n");
   // NTPサーバーに接続して時間を調整する
   configTime(0, 0, "pool.ntp.org", "time.nist.gov");
@@ -202,15 +198,16 @@ void setup() {
   power_msg.data      = true;
   // Task
   xTaskCreatePinnedToCore(main_task, "main task", 10000, NULL, 2, NULL, 1);
+  xTaskCreatePinnedToCore(sensor_task, "sensor task", 10000, NULL, 1, NULL, 1);
+  xTaskCreatePinnedToCore(lidar_task, "lidar task", 10000, NULL, 3, NULL, 0);
   xTaskCreatePinnedToCore(control_task, "control task", 4048, NULL, 2, NULL, 0);
-  xTaskCreatePinnedToCore(high_rate_sensor_task, "high rate sensor task", 4048, NULL, 2, NULL, 0);
-  xTaskCreatePinnedToCore(low_rate_sensor_task, "low rate sensor task", 4048, NULL, 2, NULL, 1);
-  xTaskCreatePinnedToCore(lidar_task, "lidar task", 10000, NULL, 2, NULL, 1);
   xTaskCreatePinnedToCore(odom_task, "odom task", 4048, NULL, 1, NULL, 0);
 
+  M5.Display.fillScreen(BLACK);
   avatar.setBatteryIcon(true);
   avatar.init();
   Serial.printf("Start\n");
+  M5.Speaker.tone(900, 100);
 }
 
 void loop() { rclc_executor_spin_some(&executor, RCL_MS_TO_NS(20)); }
@@ -236,6 +233,7 @@ void main_task(void* arg) {
         imu_reset      = false;
         dxl_reset      = false;
         avater_started = false;
+        M5.Speaker.tone(1000, 500);
         vTaskDelay(pdMS_TO_TICKS(100));
       }
     }
@@ -265,6 +263,7 @@ void main_task(void* arg) {
         avater_started = false;
       }
       M5.Display.fillScreen(BLACK);
+      M5.Speaker.tone(1000, 50);
     }
     if (M5.BtnB.wasHold()) {
       reset_flag     = true;
@@ -275,6 +274,7 @@ void main_task(void* arg) {
     } else if (M5.BtnB.wasReleased()) {
       display_mode = DisplayMode::AVATAR;
       M5.Display.fillScreen(BLACK);
+      M5.Speaker.tone(1000, 50);
     }
     if (M5.BtnC.wasHold()) {
       M5.Display.fillScreen(BLACK);
@@ -293,8 +293,10 @@ void main_task(void* arg) {
         avater_started = false;
       }
       M5.Display.fillScreen(BLACK);
+      M5.Speaker.tone(1000, 50);
     }
     // display
+    auto [als_ch0, als_ch1, ps_value] = ltr553als.getValues();
     switch (display_mode) {
       case DisplayMode::AVATAR:
         if (!avater_started) {
@@ -334,16 +336,16 @@ void main_task(void* arg) {
         M5.Display.printf("v:%.2f, w:%.2f\n", cmd_vel_msg.linear.x, cmd_vel_msg.angular.z);
         M5.Display.printf("x:%.2f, y:%.2f, yaw:%.2f\n", odom_msg.pose.pose.position.x, odom_msg.pose.pose.position.y, odom_yaw);
         M5.Display.printf("r:%.2f, p:%.2f, y:%.2f\n", deg_rpy.roll, deg_rpy.pitch, deg_rpy.yaw);
+        M5.Display.printf("ALS CH0: %d, CH1: %d, PS: %d\n", als_ch0, als_ch1, ps_value);
         M5.Display.endWrite();
         last_display_mode = display_mode;
         break;
       case DisplayMode::CAMERA:
         last_display_mode = display_mode;
-        camera.draw_jpg();
         break;
       case DisplayMode::LIDAR:
         last_display_mode = display_mode;
-        // M5.Display.fillScreen(BLACK);
+        M5.Display.fillScreen(BLACK);
         lidar.draw_pointcloud();
         break;
       default:
@@ -356,7 +358,7 @@ void main_task(void* arg) {
       get_power = false;
       Serial.printf("Power %s\n", power_msg.data ? "ON" : "OFF");
     }
-    vTaskDelay(pdMS_TO_TICKS(20));
+    vTaskDelay(pdMS_TO_TICKS(40));
   }
 }
 
@@ -449,65 +451,80 @@ void odom_task(void* arg) {
   }
 }
 
-float sensor_dt = 0.;
-void high_rate_sensor_task(void* arg) {
+void high_rate_sensor_task(float dt, std::shared_ptr<Madgwick> filter_ptr) {
   using namespace common_utils;
-  uint32_t sensor_timer   = micros();
-  imu_msg.header.frame_id = micro_ros_string_utilities_set(imu_msg.header.frame_id, "imu_frame");
-  Madgwick filter;
-  std::shared_ptr<Madgwick> filter_ptr = std::make_shared<Madgwick>(filter);
-  while (1) {
-    M5.update();
-    sensor_dt    = (float)(micros() - sensor_timer) / 1000000; // Calculate delta time
-    sensor_timer = micros();
-    if (claib_flag) {
-      gyro_caliblation();
-      return;
-    }
-    if (reset_flag) {
-      filter_ptr = std::make_shared<Madgwick>(filter);
-      imu_reset  = true;
-    }
-    // IMU
-    float raw_ax, raw_ay, raw_az;
-    float raw_gx, raw_gy, raw_gz;
-    M5.Imu.getAccel(&raw_ax, &raw_ay, &raw_az);
-    M5.Imu.getGyro(&raw_gx, &raw_gy, &raw_gz);
-    gx = (raw_gx - gyro_offset[0]);
-    gy = (raw_gy - gyro_offset[1]);
-    gz = (raw_gz - gyro_offset[2]);
-    ax = raw_ax;
-    ay = raw_ay;
-    az = raw_az;
-    if (approx_zero(gx, GYRO_MIN_VALUE)) gx = 0.f;
-    if (approx_zero(gy, GYRO_MIN_VALUE)) gy = 0.f;
-    if (approx_zero(gz, GYRO_MIN_VALUE)) gz = 0.f;
-    // 姿勢計算
-    filter_ptr->begin(1.0 / sensor_dt);
-    filter_ptr->updateIMU(gx, gy, gz, ax, ay, az);
+  // High rate sensor task
+  // Proximity sensor
+  ltr553als.update();
+  // auto [als_ch0, als_ch1, ps_value] = ltr553als.getValues();
+  // IMU
+  float raw_ax, raw_ay, raw_az;
+  float raw_gx, raw_gy, raw_gz;
+  M5.Imu.getAccel(&raw_ax, &raw_ay, &raw_az);
+  M5.Imu.getGyro(&raw_gx, &raw_gy, &raw_gz);
+  gx = (raw_gx - gyro_offset[0]);
+  gy = (raw_gy - gyro_offset[1]);
+  gz = (raw_gz - gyro_offset[2]);
+  ax = raw_ax;
+  ay = raw_ay;
+  az = raw_az;
+  if (approx_zero(gx, GYRO_MIN_VALUE)) gx = 0.f;
+  if (approx_zero(gy, GYRO_MIN_VALUE)) gy = 0.f;
+  if (approx_zero(gz, GYRO_MIN_VALUE)) gz = 0.f;
+  // 姿勢計算
+  filter_ptr->begin(1.0 / dt);
+  filter_ptr->updateIMU(gx, gy, gz, ax, ay, az);
 
-    est_rpy.roll  = filter_ptr->getRollRadians();
-    est_rpy.pitch = filter_ptr->getPitchRadians();
-    est_rpy.yaw   = filter_ptr->getYawRadians();
+  est_rpy.roll  = filter_ptr->getRollRadians();
+  est_rpy.pitch = filter_ptr->getPitchRadians();
+  est_rpy.yaw   = filter_ptr->getYawRadians();
 
-    imu_msg.header.stamp.sec      = (int32_t)time(NULL);
-    imu_msg.header.stamp.nanosec  = (uint32_t)(micros() % 1000000);
-    imu_msg.linear_acceleration.x = ax;
-    imu_msg.linear_acceleration.y = ay;
-    imu_msg.linear_acceleration.z = az;
-    imu_msg.angular_velocity.x    = gx;
-    imu_msg.angular_velocity.y    = gy;
-    imu_msg.angular_velocity.z    = gz;
-    quat_t q                      = to_quat(est_rpy);
-    imu_msg.orientation.x         = q.x;
-    imu_msg.orientation.y         = q.y;
-    imu_msg.orientation.z         = q.z;
-    imu_msg.orientation.w         = q.w;
-    vTaskDelay(pdMS_TO_TICKS(10));
+  imu_msg.header.stamp.sec      = (int32_t)time(NULL);
+  imu_msg.header.stamp.nanosec  = (uint32_t)(micros() % 1000000);
+  imu_msg.linear_acceleration.x = ax;
+  imu_msg.linear_acceleration.y = ay;
+  imu_msg.linear_acceleration.z = az;
+  imu_msg.angular_velocity.x    = gx;
+  imu_msg.angular_velocity.y    = gy;
+  imu_msg.angular_velocity.z    = gz;
+  quat_t q                      = to_quat(est_rpy);
+  imu_msg.orientation.x         = q.x;
+  imu_msg.orientation.y         = q.y;
+  imu_msg.orientation.z         = q.z;
+  imu_msg.orientation.w         = q.w;
+}
+
+void low_rate_sensor_task(float dt) {
+  // Low rate sensor task
+  camera.capture();
+  bool jpeg_converted = camera.calcJpgFrameBuffer(JEPEG_QUALITY);
+  if (display_mode == DisplayMode::CAMERA) {
+    // camera.draw();
+    camera.draw_jpg();
+  }
+  camera.returnFrameBuffer();
+  camera_fb_t* jpg_fb            = camera.getJpgFrameBuffer();
+  image_msg.header.stamp.sec     = (int32_t)time(NULL);
+  image_msg.header.stamp.nanosec = (uint32_t)(micros() % 1000000);
+  if (jpeg_converted) {
+    if (jpg_fb->buf != NULL) {
+      if (jpg_fb->len <= image_msg.data.capacity) {
+        image_msg.data.size = jpg_fb->len;
+        memcpy(image_msg.data.data, jpg_fb->buf, jpg_fb->len);
+        image_msg.format = micro_ros_string_utilities_set(image_msg.format, "jpeg");
+      }
+      camera.returnJpgFrameBuffer();
+    }
+  } else {
+    Serial.println("Failed to convert frame to JPEG");
+    M5.Display.println("Failed to convert frame to JPEG");
   }
 }
 
-void low_rate_sensor_task(void* arg) {
+void sensor_task(void* arg) {
+  using namespace common_utils;
+  ltr553als.begin();
+  imu_msg.header.frame_id                       = micro_ros_string_utilities_set(imu_msg.header.frame_id, "imu_frame");
   image_msg.header.frame_id                     = micro_ros_string_utilities_set(image_msg.header.frame_id, "rgb_frame");
   static micro_ros_utilities_memory_conf_t conf = {};
   // OPTIONALLY this struct can configure the default size of strings, basic sequences and composed sequences
@@ -520,27 +537,29 @@ void low_rate_sensor_task(void* arg) {
   conf.rules                                = rules;
   conf.n_rules                              = sizeof(rules) / sizeof(rules[0]);
   micro_ros_utilities_create_message_memory(ROSIDL_GET_MSG_TYPE_SUPPORT(sensor_msgs, msg, CompressedImage), &image_msg, conf);
-  uint8_t quality = 12;
+  Madgwick filter;
+  std::shared_ptr<Madgwick> filter_ptr = std::make_shared<Madgwick>(filter);
+  uint32_t high_time_start             = micros();
+  uint32_t low_time_start              = micros();
   while (1) {
-    camera.capture();
-    bool jpeg_converted = camera.calcJpgFrameBuffer(quality);
-    camera_fb_t* jpg_fb = camera.getJpgFrameBuffer();
-    camera.returnFrameBuffer();
-    image_msg.header.stamp.sec     = (int32_t)time(NULL);
-    image_msg.header.stamp.nanosec = (uint32_t)(micros() % 1000000);
-    if (jpeg_converted) {
-      if (jpg_fb->buf != NULL) {
-        if (jpg_fb->len <= image_msg.data.capacity) {
-          image_msg.data.size = jpg_fb->len;
-          memcpy(image_msg.data.data, jpg_fb->buf, jpg_fb->len);
-          image_msg.format = micro_ros_string_utilities_set(image_msg.format, "jpeg");
-        }
-      }
-    } else {
-      Serial.println("Failed to convert frame to JPEG");
-      M5.Display.println("Failed to convert frame to JPEG");
+    M5.update();
+    if (claib_flag) {
+      gyro_caliblation();
+      return;
     }
-    vTaskDelay(pdMS_TO_TICKS(500));
+    if (reset_flag) {
+      filter_ptr = std::make_shared<Madgwick>(filter);
+      imu_reset  = true;
+    }
+    float high_rate_dt = (float)(micros() - high_time_start) / 1000000; // Calculate delta time
+    high_time_start    = micros();
+    high_rate_sensor_task(high_rate_dt, filter_ptr);
+    float low_rate_dt = (float)(micros() - low_time_start) / 1000000; // Calculate low rate delta time
+    if (low_rate_dt >= 0.01) {
+      low_rate_sensor_task(low_rate_dt);
+      low_time_start = micros();
+    }
+    vTaskDelay(pdMS_TO_TICKS(10));
   }
 }
 
