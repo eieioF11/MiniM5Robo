@@ -91,7 +91,7 @@ bool get_power = false;
 void power_sub_callback(const void* msgin) {
   const std_msgs__msg__Bool* msg = (const std_msgs__msg__Bool*)msgin;
   power_msg                      = *msg;
-  get_power                      = true;
+  // get_power                      = true;
 }
 
 void timer_callback(rcl_timer_t* timer, int64_t last_call_time) {
@@ -109,6 +109,7 @@ bool dxl_reset  = false;
 
 void setup() {
   auto cfg = M5.config();
+  cfg.output_power = false; // 5V output to external port
   M5.begin(cfg);
   Serial.begin(115200);
   // ディスプレイ設定
@@ -199,7 +200,7 @@ void setup() {
   rclc_executor_add_subscription(&executor, &power_sub, &power_msg, &power_sub_callback, ON_NEW_DATA);
   rclc_executor_add_timer(&executor, &rcl_timer);
   dxl_torque_msg.data = true;
-  power_msg.data      = true;
+  // power_msg.data      = true;
   // Task
   xTaskCreatePinnedToCore(main_task, "main task", 10000, NULL, 2, NULL, 1);
   xTaskCreatePinnedToCore(sensor_task, "sensor task", 10000, NULL, 1, NULL, 1);
@@ -281,15 +282,15 @@ void main_task(void* arg) {
       M5.Speaker.tone(1000, 50);
     }
     if (M5.BtnC.wasHold()) {
-      M5.Display.fillScreen(BLACK);
-      display_mode   = last_display_mode;
-      power_msg.data = !power_msg.data;
-      get_power      = true;
-      M5.Display.startWrite();
-      M5.Display.setCursor(0, 0);
-      M5.Display.printf("Power %s\n", power_msg.data ? "ON" : "OFF");
-      M5.Display.endWrite();
-      vTaskDelay(pdMS_TO_TICKS(1000));
+      // M5.Display.fillScreen(BLACK);
+      // display_mode   = last_display_mode;
+      // power_msg.data = !power_msg.data;
+      // get_power      = true;
+      // M5.Display.startWrite();
+      // M5.Display.setCursor(0, 0);
+      // M5.Display.printf("Power %s\n", power_msg.data ? "ON" : "OFF");
+      // M5.Display.endWrite();
+      // vTaskDelay(pdMS_TO_TICKS(1000));
     } else if (M5.BtnC.wasReleased()) {
       sift_display_mode(true);
       if (display_mode != DisplayMode::AVATAR) {
